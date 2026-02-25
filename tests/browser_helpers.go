@@ -136,19 +136,20 @@ func BrowserCreateCipher(t *testing.T, page playwright.Page, name, username, pas
 	})
 
 	// Wait for the modal/page to create an item
-	nameInput := page.Locator("input[id='name'], input[aria-label='Name'], input[name='Name']")
+	nameInput := page.Locator("input[formcontrolname='name'], input[id='name'], input[aria-label*='Name'], input[name='Name']").First()
 	err = nameInput.WaitFor(playwright.LocatorWaitForOptions{
 		Timeout: playwright.Float(10000), // wait 10 seconds for modal
 	})
 	require.NoError(t, err, "Item name input not found")
+
 	err = nameInput.Fill(name)
 	require.NoError(t, err, "failed to fill item name")
 
-	usernameInput := page.Locator("input[id='username'], input[aria-label='Username']")
+	usernameInput := page.Locator("input[formcontrolname='username'], input[id='username'], input[aria-label*='Username']").First()
 	err = usernameInput.Fill(username)
 	require.NoError(t, err, "failed to fill username")
 
-	passwordInput := page.Locator("input[id='password'], input[aria-label='Password']")
+	passwordInput := page.Locator("input[formcontrolname='password'], input[id='password'], input[aria-label*='Password'], input[type='password']").First()
 	err = passwordInput.Fill(password)
 	require.NoError(t, err, "failed to fill password")
 
@@ -159,7 +160,7 @@ func BrowserCreateCipher(t *testing.T, page playwright.Page, name, username, pas
 
 	// Wait for the modal to disappear or toast to appear
 	// Best robust way: wait for the new item to appear in the list
-	err = page.Locator(fmt.Sprintf("text=%s", name)).WaitFor()
+	err = page.Locator(fmt.Sprintf("text=%s", name)).First().WaitFor()
 	require.NoError(t, err, "failed to see new item in the list after save")
 
 	// Small delay to ensure DB write finishes
