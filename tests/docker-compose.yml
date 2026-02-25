@@ -1,0 +1,14 @@
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    environment:
+      SIGNUPS_ALLOWED: "true"
+      INVITATIONS_ALLOWED: "true"
+      ADMIN_TOKEN: "test-admin-token"
+      SENDS_ALLOWED: "true"
+      EMERGENCY_ACCESS_ALLOWED: "true"
+      SHOW_PASSWORD_HINT: "false"
+    ports:
+      - "8081:80"
+    tmpfs:
+      - /data
