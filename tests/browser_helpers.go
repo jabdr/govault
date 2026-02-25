@@ -123,7 +123,7 @@ func BrowserCreateCipher(t *testing.T, page playwright.Page, name, username, pas
 
 	// Click "Add item" button - adjust selector based on Bitwarden web UI
 	// Usually there's an aria-label="Add item", a button with a plus icon, or #newItemDropdown
-	addItemBtn := page.Locator("button[aria-label='Add item'], a[aria-label='Add item'], button:has-text('New item'), button[aria-label='New'], #newItemDropdown").First()
+	addItemBtn := page.Locator("#newItemDropdown").First()
 	err := addItemBtn.WaitFor()
 	require.NoError(t, err, "Add item button not found")
 	err = addItemBtn.Click()
@@ -163,6 +163,9 @@ func BrowserCreateCipher(t *testing.T, page playwright.Page, name, username, pas
 	err = page.Locator(fmt.Sprintf("text=%s", name)).First().WaitFor()
 	require.NoError(t, err, "failed to see new item in the list after save")
 
+	closeBtn := page.Locator("button[bitdialogclose]").First()
+	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
+
 	// Small delay to ensure DB write finishes
 	time.Sleep(1 * time.Second)
 }
@@ -181,4 +184,129 @@ func BrowserCheckCipherExists(t *testing.T, page playwright.Page, name string) b
 	})
 
 	return err == nil
+}
+
+// BrowserCreateSecureNote creates a new secure note cipher through the web UI.
+func BrowserCreateSecureNote(t *testing.T, page playwright.Page, name, notes string) {
+	t.Helper()
+
+	addItemBtn := page.Locator("#newItemDropdown").First()
+	err := addItemBtn.WaitFor()
+	require.NoError(t, err, "Add item button not found")
+	err = addItemBtn.Click()
+	require.NoError(t, err, "failed to click add item")
+
+	typeOption := page.Locator("button[role='menuitem']:has-text('Note'), a[role='menuitem']:has-text('Note')").First()
+	_ = typeOption.Click(playwright.LocatorClickOptions{
+		Timeout: playwright.Float(3000),
+	})
+
+	nameInput := page.Locator("input[formcontrolname='name'], input[id='name'], input[aria-label*='Name'], input[name='Name']").First()
+	err = nameInput.WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(10000),
+	})
+	require.NoError(t, err, "Item name input not found")
+
+	err = nameInput.Fill(name)
+	require.NoError(t, err, "failed to fill item name")
+
+	notesInput := page.Locator("textarea[formcontrolname='notes'], textarea[id='notes'], textarea[aria-label*='Notes']").First()
+	err = notesInput.Fill(notes)
+	require.NoError(t, err, "failed to fill notes")
+
+	saveBtn := page.Locator("button:has-text('Save'), button[aria-label='Save']").First()
+	err = saveBtn.Click()
+	require.NoError(t, err, "failed to click save button")
+
+	err = page.Locator(fmt.Sprintf("text=%s", name)).First().WaitFor()
+	require.NoError(t, err, "failed to see new item in the list after save")
+
+	closeBtn := page.Locator("button[bitdialogclose]").First()
+	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
+
+	time.Sleep(1 * time.Second)
+}
+
+// BrowserCreateCard creates a new card cipher through the web UI.
+func BrowserCreateCard(t *testing.T, page playwright.Page, name, cardholderName, number string) {
+	t.Helper()
+
+	addItemBtn := page.Locator("#newItemDropdown").First()
+	err := addItemBtn.WaitFor()
+	require.NoError(t, err, "Add item button not found")
+	err = addItemBtn.Click()
+	require.NoError(t, err, "failed to click add item")
+
+	typeOption := page.Locator("button[role='menuitem']:has-text('Card'), a[role='menuitem']:has-text('Card')").First()
+	_ = typeOption.Click(playwright.LocatorClickOptions{
+		Timeout: playwright.Float(3000),
+	})
+
+	nameInput := page.Locator("input[formcontrolname='name'], input[id='name'], input[aria-label*='Name'], input[name='Name']").First()
+	err = nameInput.WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(10000),
+	})
+	require.NoError(t, err, "Item name input not found")
+
+	err = nameInput.Fill(name)
+	require.NoError(t, err, "failed to fill item name")
+
+	cardholderInput := page.Locator("input[formcontrolname='cardholderName']").First()
+	err = cardholderInput.Fill(cardholderName)
+	require.NoError(t, err, "failed to fill cardholderName")
+
+	numberInput := page.Locator("input[formcontrolname='number']").First()
+	err = numberInput.Fill(number)
+	require.NoError(t, err, "failed to fill number")
+
+	saveBtn := page.Locator("button:has-text('Save'), button[aria-label='Save']").First()
+	err = saveBtn.Click()
+	require.NoError(t, err, "failed to click save button")
+
+	err = page.Locator(fmt.Sprintf("text=%s", name)).First().WaitFor()
+	require.NoError(t, err, "failed to see new item in the list after save")
+
+	closeBtn := page.Locator("button[bitdialogclose]").First()
+	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
+
+	time.Sleep(1 * time.Second)
+}
+
+// BrowserVerifyCipherData clicks an item, checks its inputs, and closes the modal
+func BrowserVerifyCipherData(t *testing.T, page playwright.Page, name string, checks map[string]string) {
+	t.Helper()
+
+	item := page.Locator(fmt.Sprintf("text=%s", name)).First()
+	err := item.Click()
+	require.NoError(t, err, "failed to click item to verify")
+
+	// In newer Bitwarden versions, clicking an item opens it in "View" mode.
+	// We need to click "Edit" to see the actual input values.
+	editBtn := page.Locator("button:has-text('Edit'), button[aria-label='Edit']").First()
+	_ = editBtn.WaitFor(playwright.LocatorWaitForOptions{Timeout: playwright.Float(3000)})
+	if count, _ := editBtn.Count(); count > 0 {
+		_ = editBtn.Click()
+	}
+
+	// Wait for modal to load by waiting for 'name' field
+	nameInput := page.Locator("input[formcontrolname='name'], input[name='Name']").First()
+	err = nameInput.WaitFor(playwright.LocatorWaitForOptions{Timeout: playwright.Float(10000)})
+	require.NoError(t, err, "failed to wait for modal to open")
+
+	for formControlName, expectedVal := range checks {
+		var val string
+		if formControlName == "notes" {
+			locator := page.Locator(fmt.Sprintf("textarea[formcontrolname='%s']", formControlName)).First()
+			val, err = locator.InputValue()
+		} else {
+			locator := page.Locator(fmt.Sprintf("input[formcontrolname='%s']", formControlName)).First()
+			val, err = locator.InputValue()
+		}
+		require.NoError(t, err, "failed to read value for %s", formControlName)
+		require.Equal(t, expectedVal, val, "value mismatch for %s", formControlName)
+	}
+
+	closeBtn := page.Locator("button[bitdialogclose], button:has-text('Cancel')").First()
+	_ = closeBtn.Click()
+	time.Sleep(1 * time.Second)
 }
