@@ -7,8 +7,11 @@ services:
       ADMIN_TOKEN: "test-admin-token"
       SENDS_ALLOWED: "true"
       EMERGENCY_ACCESS_ALLOWED: "true"
-      SHOW_PASSWORD_HINT: "false"
+      SHOW_PASSWORD_HINT: "true"
+      ROCKET_TLS: '{certs="/ssl/certs.pem",key="/ssl/key.pem"}'
     ports:
-      - "8081:80"
+      - "8443:80"
+    volumes:
+      - ./ssl:/ssl:ro
     tmpfs:
       - /data
