@@ -25,6 +25,10 @@ GoVault requires connecting to a Vaultwarden or Bitwarden server. Authentication
 
 ```sh
 # Export your main password
+#export GOVAULT_SERVER="https://vault.example.com"
+#export GOVAULT_EMAIL="user@example.com"
+#export GOVAULT_CLIENT_ID="client-id"
+#export GOVAULT_CLIENT_SECRET="client-secret"
 export GOVAULT_PASSWORD="your-master-password"
 
 # List all ciphers
@@ -40,6 +44,11 @@ govault -server https://vault.example.com -email user@example.com -action create
 # Create a text send (Bitwarden Send)
 govault -server https://vault.example.com -email user@example.com -action send-create \
   -name "Secret Note" -text "This is highly confidential information."
+
+# With API Key
+govault -server https://vault.example.com -email user@example.com -client-id "client-id" \
+  -client-secret "client-secret" -action list
+
 ```
 
 ### Supported CLI Actions
