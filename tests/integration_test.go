@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
+	"github.com/playwright-community/playwright-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -82,6 +84,34 @@ func TestSendLifecycle(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "Created send not found in list")
+
+	// Browser check: actually load the send link and verify it decrypts correctly in Vaultwarden UI
+	if os.Getenv("SKIP_BROWSER_TESTS") != "1" {
+		t.Log("Verifying send access via browser")
+		_, _, page := SetupPlaywright(t)
+
+		_, err = page.Goto(accessURL)
+		require.NoError(t, err)
+
+		// Wait for the textarea to be available
+		textLoc := page.Locator("textarea[formcontrolname='sendText'], textarea#text")
+		err = textLoc.First().WaitFor(playwright.LocatorWaitForOptions{
+			Timeout: playwright.Float(5000),
+		})
+		require.NoError(t, err, "Failed to find textarea for send text")
+
+		time.Sleep(1 * time.Second) // wait for angular to apply the value
+		val, err := textLoc.First().InputValue()
+		require.NoError(t, err)
+		if val != "secret content" {
+			content, _ := page.Content()
+			t.Logf("\n--- UI HTML BODY ---\n%s\n--------------------\n", content)
+		}
+		require.Equal(t, "secret content", val, "Decrypted send content must match")
+		t.Log("Send accessed and decrypted successfully in UI")
+
+		_ = page.Context().Close()
+	}
 
 	// Delete
 	err = v.DeleteSend(send.ID)

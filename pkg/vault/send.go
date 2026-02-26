@@ -62,8 +62,9 @@ func (v *Vault) CreateTextSend(name, text string, opts SendOptions) (*Send, stri
 		return nil, "", fmt.Errorf("vault: encrypt send text: %w", err)
 	}
 
-	// Encrypt the send key with the vault symmetric key
-	encSendKey, err := crypto.EncryptToEncString(sendKey.Bytes(), v.symKey)
+	// Encrypt the send secret (seed) with the vault symmetric key.
+	// Bitwarden clients expect the seed here, not the derived 64-byte key.
+	encSendKey, err := crypto.EncryptToEncString(secret, v.symKey)
 	if err != nil {
 		return nil, "", fmt.Errorf("vault: encrypt send key: %w", err)
 	}
@@ -177,7 +178,8 @@ func (v *Vault) decryptSendKey(encKeyStr string) *crypto.SymmetricKey {
 	if err != nil {
 		return nil
 	}
-	key, err := crypto.MakeSymmetricKey(decrypted)
+	// The decrypted value is the 16-byte seed, derive the 64-byte key from it
+	key, err := crypto.DeriveSendKey(decrypted)
 	if err != nil {
 		return nil
 	}

@@ -25,14 +25,14 @@ func GenerateSendSecret() ([]byte, error) {
 }
 
 // DeriveSendKey derives a 64-byte SymmetricKey from a 16-byte Send secret
-// using HKDF-SHA256 with "bitwarden-send" as the info parameter.
+// using HKDF-SHA256 with "bitwarden-send" as the salt and "send" as the info parameter.
 // The first 32 bytes are the encryption key, the second 32 bytes the MAC key.
 func DeriveSendKey(secret []byte) (*SymmetricKey, error) {
 	if len(secret) != SendSecretSize {
 		return nil, fmt.Errorf("crypto: send secret must be %d bytes, got %d", SendSecretSize, len(secret))
 	}
 
-	r := hkdf.New(sha256.New, secret, nil, []byte("bitwarden-send"))
+	r := hkdf.New(sha256.New, secret, []byte("bitwarden-send"), []byte("send"))
 	key := make([]byte, 64)
 	if _, err := io.ReadFull(r, key); err != nil {
 		return nil, fmt.Errorf("crypto: HKDF derive send key: %w", err)
