@@ -9,6 +9,10 @@ services:
       EMERGENCY_ACCESS_ALLOWED: "true"
       SHOW_PASSWORD_HINT: "true"
       ROCKET_TLS: '{certs="/ssl/certs.pem",key="/ssl/key.pem"}'
+      LOGIN_RATELIMIT_MAX_BURST: "1000"
+      LOGIN_RATELIMIT_SECONDS: "1"
+      ADMIN_RATELIMIT_MAX_BURST: "1000"
+      ADMIN_RATELIMIT_SECONDS: "1"
     ports:
       - "8443:80"
     volumes:

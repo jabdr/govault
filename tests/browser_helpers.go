@@ -26,7 +26,7 @@ func SetupPlaywright(t *testing.T) (*playwright.Playwright, playwright.Browser, 
 	require.NoError(t, err, "could not start playwright")
 
 	// Check if running in CI to determine headless mode
-	headless := os.Getenv("CI") != "false"
+	headless := os.Getenv("CI") == "true"
 
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(headless),

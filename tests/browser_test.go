@@ -290,8 +290,6 @@ func TestSharedCipherRotationBrowser(t *testing.T) {
 
 	BrowserLogin(t, page1Rotated, testServer, email1, newPassword1)
 
-	time.Sleep(3 * time.Second)
-	_, _ = page1Rotated.Reload()
 	time.Sleep(2 * time.Second)
 
 	BrowserVerifyCipherData(t, page1Rotated, "Shared Browser Login", map[string]string{

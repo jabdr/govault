@@ -111,3 +111,33 @@ func TestEmergencyAccessLifecycle(t *testing.T) {
 
 	t.Log("Emergency access lifecycle test complete")
 }
+
+func TestAPIKeyLogin(t *testing.T) {
+	email := "test-apikey@example.com"
+	password := "test-password-123"
+
+	// Register user
+	RegisterTestUser(t, testServer, email, password)
+
+	// Login with standard method
+	v := APILogin(t, testServer, email, password)
+
+	// Get API Key
+	clientID, clientSecret, err := v.GetAPIKey()
+	require.NoError(t, err, "GetAPIKey")
+	require.NotEmpty(t, clientID, "Client ID should not be empty")
+	require.NotEmpty(t, clientSecret, "Client Secret should not be empty")
+
+	// Now try logging in with the API key
+	v2, err := vault.LoginAPIKey(testServer, clientID, clientSecret, email, password, GetTestLogger())
+	require.NoError(t, err, "API Key Login should succeed")
+
+	c := vault.NewCipher(vault.CipherTypeLogin, "Integration Test Login API Key")
+	c.SetLogin("testuser", "testpass")
+	err = v2.CreateCipher(c)
+	require.NoError(t, err, "CreateCipher with API key login")
+
+	fetched, err := v2.GetCipher(c.ID())
+	require.NoError(t, err, "GetCipher with API key login")
+	assert.Equal(t, "Integration Test Login API Key", fetched.Name(), "Name mismatch")
+}

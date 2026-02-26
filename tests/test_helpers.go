@@ -100,6 +100,10 @@ func SetupTestServer() (string, func()) {
 			"SMTP_PORT":                      "1025",
 			"SMTP_FROM":                      "vaultwarden@test.local",
 			"SMTP_SECURITY":                  "off",
+			"LOGIN_RATELIMIT_MAX_BURST":      "1000",
+			"LOGIN_RATELIMIT_SECONDS":        "1",
+			"ADMIN_RATELIMIT_MAX_BURST":      "1000",
+			"ADMIN_RATELIMIT_SECONDS":        "1",
 		},
 		Files: []testcontainers.ContainerFile{
 			{

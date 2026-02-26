@@ -69,6 +69,30 @@ func (c *Client) Login(email, passwordHash, deviceIdentifier string) (*LoginResp
 	return &resp, nil
 }
 
+// LoginWithAPIKey authenticates with the server using a client ID and secret.
+func (c *Client) LoginWithAPIKey(clientID, clientSecret, deviceIdentifier string) (*LoginResponse, error) {
+	c.logger.Info("login with api key", "client_id", clientID)
+
+	form := url.Values{
+		"grant_type":       {"client_credentials"},
+		"scope":            {"api"},
+		"client_id":        {clientID},
+		"client_secret":    {clientSecret},
+		"deviceType":       {"9"},
+		"deviceIdentifier": {deviceIdentifier},
+		"deviceName":       {"govault"},
+	}
+
+	var resp LoginResponse
+	err := c.doFormRequest("/identity/connect/token", form.Encode(), &resp)
+	if err != nil {
+		return nil, fmt.Errorf("api: login api key: %w", err)
+	}
+
+	c.SetTokens(resp.AccessToken, resp.RefreshToken)
+	return &resp, nil
+}
+
 // RefreshAccessToken refreshes the access token using the refresh token.
 func (c *Client) RefreshAccessToken() error {
 	c.mu.RLock()

@@ -35,27 +35,17 @@ func Login(serverURL, email, password string, logger *slog.Logger) (*Vault, erro
 	client := api.NewClient(serverURL, logger)
 	email = strings.ToLower(strings.TrimSpace(email))
 
-	// Step 1: Prelogin — get KDF parameters
 	prelogin, err := client.Prelogin(email)
 	if err != nil {
 		return nil, fmt.Errorf("vault: prelogin: %w", err)
 	}
 	logger.Info("prelogin complete", "kdf", prelogin.Kdf, "iterations", prelogin.KdfIterations)
 
-	// Step 2: Derive master key
-	masterKey, err := crypto.DeriveKey(
-		[]byte(password), []byte(email),
-		prelogin.Kdf, prelogin.KdfIterations,
-		prelogin.KdfMemory, prelogin.KdfParallelism,
-	)
+	masterKey, passwordHash, err := deriveKeys(password, email, prelogin)
 	if err != nil {
-		return nil, fmt.Errorf("vault: derive master key: %w", err)
+		return nil, err
 	}
 
-	// Step 3: Hash password for server authentication
-	passwordHash := crypto.HashPassword(password, masterKey)
-
-	// Step 4: Login
 	deviceID := "govault-device"
 	loginResp, err := client.Login(email, passwordHash, deviceID)
 	if err != nil {
@@ -63,13 +53,72 @@ func Login(serverURL, email, password string, logger *slog.Logger) (*Vault, erro
 	}
 	logger.Info("login successful")
 
-	// Step 5: Stretch master key and decrypt symmetric key
+	syncData, err := client.Sync()
+	if err != nil {
+		return nil, fmt.Errorf("vault: sync: %w", err)
+	}
+
+	return newVault(client, email, masterKey, passwordHash, loginResp.Key, loginResp.PrivateKey, syncData, logger)
+}
+
+// LoginAPIKey authenticates with the server using an API key and sets up the vault.
+func LoginAPIKey(serverURL, clientID, clientSecret, email, password string, logger *slog.Logger) (*Vault, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	client := api.NewClient(serverURL, logger)
+	email = strings.ToLower(strings.TrimSpace(email))
+
+	prelogin, err := client.Prelogin(email)
+	if err != nil {
+		return nil, fmt.Errorf("vault: prelogin: %w", err)
+	}
+	logger.Info("prelogin complete", "kdf", prelogin.Kdf, "iterations", prelogin.KdfIterations)
+
+	masterKey, passwordHash, err := deriveKeys(password, email, prelogin)
+	if err != nil {
+		return nil, err
+	}
+
+	deviceID := "govault-device"
+	_, err = client.LoginWithAPIKey(clientID, clientSecret, deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("vault: login api key: %w", err)
+	}
+	logger.Info("login with api key successful")
+
+	// API key login does not return user encryption keys, so a sync is required immediately
+	syncData, err := client.Sync()
+	if err != nil {
+		return nil, fmt.Errorf("vault: sync for keys: %w", err)
+	}
+
+	return newVault(client, email, masterKey, passwordHash, syncData.Profile.Key, syncData.Profile.PrivateKey, syncData, logger)
+}
+
+// deriveKeys performs PBKDF2 to derive the user's master key and login password hash.
+func deriveKeys(password, email string, prelogin *api.PreloginResponse) ([]byte, string, error) {
+	masterKey, err := crypto.DeriveKey(
+		[]byte(password), []byte(email),
+		prelogin.Kdf, prelogin.KdfIterations,
+		prelogin.KdfMemory, prelogin.KdfParallelism,
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("vault: derive master key: %w", err)
+	}
+	passwordHash := crypto.HashPassword(password, masterKey)
+	return masterKey, passwordHash, nil
+}
+
+// newVault processes the encrypted keys, builds the Vault object, and conditionally sets up initial syncData.
+func newVault(client *api.Client, email string, masterKey []byte, passwordHash, protectedKeyStr, privateKeyStr string, syncData *api.SyncResponse, logger *slog.Logger) (*Vault, error) {
 	stretched, err := crypto.StretchKey(masterKey)
 	if err != nil {
 		return nil, fmt.Errorf("vault: stretch key: %w", err)
 	}
 
-	protectedKey, err := crypto.ParseEncString(loginResp.Key)
+	protectedKey, err := crypto.ParseEncString(protectedKeyStr)
 	if err != nil {
 		return nil, fmt.Errorf("vault: parse protected key: %w", err)
 	}
@@ -80,10 +129,9 @@ func Login(serverURL, email, password string, logger *slog.Logger) (*Vault, erro
 	}
 	logger.Info("symmetric key decrypted")
 
-	// Step 6: Decrypt RSA private key (if present)
 	var privateKey []byte
-	if loginResp.PrivateKey != "" {
-		encPrivKey, err := crypto.ParseEncString(loginResp.PrivateKey)
+	if privateKeyStr != "" {
+		encPrivKey, err := crypto.ParseEncString(privateKeyStr)
 		if err != nil {
 			return nil, fmt.Errorf("vault: parse private key: %w", err)
 		}
@@ -94,7 +142,7 @@ func Login(serverURL, email, password string, logger *slog.Logger) (*Vault, erro
 		logger.Info("RSA private key decrypted")
 	}
 
-	return &Vault{
+	v := &Vault{
 		client:       client,
 		symKey:       symKey,
 		privateKey:   privateKey,
@@ -102,8 +150,25 @@ func Login(serverURL, email, password string, logger *slog.Logger) (*Vault, erro
 		masterKey:    masterKey,
 		passwordHash: passwordHash,
 		orgKeys:      make(map[string]*crypto.SymmetricKey),
+		syncData:     syncData,
 		logger:       logger,
-	}, nil
+	}
+
+	if syncData != nil {
+		for _, org := range syncData.Profile.Organizations {
+			if org.Key == "" {
+				continue
+			}
+			orgKey, err := v.decryptOrgKey(org.Key)
+			if err != nil {
+				v.logger.Warn("failed to decrypt org key", "orgID", org.ID, "error", err)
+				continue
+			}
+			v.orgKeys[org.ID] = orgKey
+		}
+	}
+
+	return v, nil
 }
 
 // Client returns the underlying API client.
@@ -291,4 +356,22 @@ func (v *Vault) ChangePassword(currentPassword, newPassword string) error {
 	v.passwordHash = newPasswordHash
 	v.logger.Info("password changed successfully")
 	return nil
+}
+
+// GetAPIKey retrieves the API client ID and secret for the user.
+// It returns (clientID, clientSecret, error).
+func (v *Vault) GetAPIKey() (string, string, error) {
+	if v.syncData == nil {
+		if err := v.Sync(); err != nil {
+			return "", "", err
+		}
+	}
+
+	secret, err := v.client.GetAPIKey(v.passwordHash)
+	if err != nil {
+		return "", "", err
+	}
+
+	clientID := "user." + v.syncData.Profile.ID
+	return clientID, secret, nil
 }

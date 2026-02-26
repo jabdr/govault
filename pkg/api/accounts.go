@@ -56,3 +56,18 @@ func (c *Client) RotateKey(req *RotateKeyRequest) error {
 	}
 	return nil
 }
+
+// GetAPIKey returns the API key for the account.
+func (c *Client) GetAPIKey(masterPasswordHash string) (string, error) {
+	c.logger.Info("fetching API key")
+	req := map[string]string{
+		"masterPasswordHash": masterPasswordHash,
+	}
+	var resp struct {
+		APIKey string `json:"apiKey"`
+	}
+	if err := c.doRequest(http.MethodPost, "/api/accounts/api-key", req, &resp); err != nil {
+		return "", fmt.Errorf("api: get api key: %w", err)
+	}
+	return resp.APIKey, nil
+}

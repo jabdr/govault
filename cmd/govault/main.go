@@ -31,6 +31,8 @@ func main() {
 		accessType    int
 		waitDays      int
 		verbose       bool
+		clientID      string
+		clientSecret  string
 	)
 
 	flag.StringVar(&action, "action", "", "Action: list, get, create, update, delete, change-password, "+
@@ -39,8 +41,8 @@ func main() {
 		"sends, send-create, send-get, send-delete, "+
 		"emergency-trusted, emergency-granted, emergency-invite, emergency-confirm, "+
 		"emergency-initiate, emergency-approve, emergency-reject, emergency-view, emergency-takeover")
-	flag.StringVar(&server, "server", "", "Vaultwarden/Bitwarden server URL")
-	flag.StringVar(&email, "email", "", "Account email")
+	flag.StringVar(&server, "server", "", "Vaultwarden/Bitwarden server URL (or set GOVAULT_SERVER)")
+	flag.StringVar(&email, "email", "", "Account email (or set GOVAULT_EMAIL)")
 	flag.StringVar(&password, "password", "", "Master password (or set GOVAULT_PASSWORD env)")
 	flag.StringVar(&id, "id", "", "Cipher/member/send/emergency-access ID")
 	flag.StringVar(&orgID, "org-id", "", "Organization ID")
@@ -54,6 +56,8 @@ func main() {
 	flag.IntVar(&accessType, "access-type", 0, "Emergency access type: 0=view, 1=takeover")
 	flag.IntVar(&waitDays, "wait-days", 7, "Emergency access wait time in days")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
+	flag.StringVar(&clientID, "client-id", "", "API Client ID (or set GOVAULT_CLIENT_ID)")
+	flag.StringVar(&clientSecret, "client-secret", "", "API Client Secret (or set GOVAULT_CLIENT_SECRET)")
 	flag.Parse()
 
 	if action == "" {
@@ -61,8 +65,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	if server == "" {
+		server = os.Getenv("GOVAULT_SERVER")
+	}
+	if email == "" {
+		email = os.Getenv("GOVAULT_EMAIL")
+	}
 	if password == "" {
 		password = os.Getenv("GOVAULT_PASSWORD")
+	}
+	if clientID == "" {
+		clientID = os.Getenv("GOVAULT_CLIENT_ID")
+	}
+	if clientSecret == "" {
+		clientSecret = os.Getenv("GOVAULT_CLIENT_SECRET")
 	}
 
 	logLevel := slog.LevelInfo
@@ -76,14 +92,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	v, err := vault.Login(server, email, password, logger)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Login failed: %v\n", err)
-		os.Exit(1)
+	var v *vault.Vault
+	var err error
+	if clientID != "" && clientSecret != "" {
+		v, err = vault.LoginAPIKey(server, clientID, clientSecret, email, password, logger)
+	} else {
+		v, err = vault.Login(server, email, password, logger)
 	}
 
-	if err := v.Sync(); err != nil {
-		fmt.Fprintf(os.Stderr, "Sync failed: %v\n", err)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Login failed: %v\n", err)
 		os.Exit(1)
 	}
 
