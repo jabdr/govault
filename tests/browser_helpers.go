@@ -163,7 +163,7 @@ func BrowserCreateCipher(t *testing.T, page playwright.Page, name, username, pas
 	err = page.Locator(fmt.Sprintf("text=%s", name)).First().WaitFor()
 	require.NoError(t, err, "failed to see new item in the list after save")
 
-	closeBtn := page.Locator("button[bitdialogclose]").First()
+	closeBtn := page.Locator(`button[bitdialogclose][size="default"]`).First()
 	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
 
 	// Small delay to ensure DB write finishes
@@ -221,7 +221,7 @@ func BrowserCreateSecureNote(t *testing.T, page playwright.Page, name, notes str
 	err = page.Locator(fmt.Sprintf("text=%s", name)).First().WaitFor()
 	require.NoError(t, err, "failed to see new item in the list after save")
 
-	closeBtn := page.Locator("button[bitdialogclose]").First()
+	closeBtn := page.Locator(`button[bitdialogclose][size="default"]`).First()
 	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
 
 	time.Sleep(1 * time.Second)
@@ -266,7 +266,7 @@ func BrowserCreateCard(t *testing.T, page playwright.Page, name, cardholderName,
 	err = page.Locator(fmt.Sprintf("text=%s", name)).First().WaitFor()
 	require.NoError(t, err, "failed to see new item in the list after save")
 
-	closeBtn := page.Locator("button[bitdialogclose]").First()
+	closeBtn := page.Locator(`button[bitdialogclose][size="default"]`).First()
 	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
 
 	time.Sleep(1 * time.Second)
@@ -309,7 +309,7 @@ func BrowserVerifyCipherData(t *testing.T, page playwright.Page, name string, ch
 		require.Equal(t, expectedVal, val, "value mismatch for %s", formControlName)
 	}
 
-	closeBtn := page.Locator("button[bitdialogclose], button:has-text('Cancel')").First()
+	closeBtn := page.Locator(`button[bitdialogclose][size="default"], button:has-text('Cancel')`).First()
 	_ = closeBtn.Click()
 	time.Sleep(1 * time.Second)
 }
