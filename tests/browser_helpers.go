@@ -277,7 +277,10 @@ func BrowserVerifyCipherData(t *testing.T, page playwright.Page, name string, ch
 	t.Helper()
 
 	item := page.Locator(fmt.Sprintf("text=%s", name)).First()
-	err := item.Click()
+	err := item.WaitFor()
+	require.NoError(t, err, "failed to wait for item to verify")
+
+	err = item.Click()
 	require.NoError(t, err, "failed to click item to verify")
 
 	// In newer Bitwarden versions, clicking an item opens it in "View" mode.

@@ -108,3 +108,12 @@ func parsePrivateKey(der []byte) (*rsa.PrivateKey, error) {
 	}
 	return rsaKey, nil
 }
+
+// PublicKeyFromPrivate extracts the public key in DER format from a private key DER.
+func PublicKeyFromPrivate(privateKeyDER []byte) ([]byte, error) {
+	key, err := parsePrivateKey(privateKeyDER)
+	if err != nil {
+		return nil, err
+	}
+	return x509.MarshalPKIXPublicKey(&key.PublicKey)
+}

@@ -173,3 +173,130 @@ func TestPasswordRotationBrowser(t *testing.T) {
 	})
 	t.Log("Verified cipher decryption in UI with new password")
 }
+
+func TestSharedCipherRotationBrowser(t *testing.T) {
+	if os.Getenv("SKIP_BROWSER_TESTS") == "1" {
+		t.Skip("SKIP_BROWSER_TESTS is set")
+	}
+
+	email1 := "user1@example.com"
+	email2 := "user2@example.com"
+	password := "password123"
+	newPassword1 := "new-pass-user1-456"
+
+	// 1. Register users
+	RegisterTestUser(t, testServer, email1, password)
+	RegisterTestUser(t, testServer, email2, password)
+
+	// 2. User1 sets up the org and invites User2
+	v1 := APILogin(t, testServer, email1, password)
+	orgID, err := v1.CreateOrganization("Shared Org", email1, "Shared Collection")
+	require.NoError(t, err)
+
+	err = v1.InviteToOrganization(orgID, []string{email2}, 1) // Type 1 = Admin
+	require.NoError(t, err)
+
+	// User2 gets token via Mailpit
+	token := GetInviteToken(t, email2)
+	require.NotEmpty(t, token, "expected invite token")
+	t.Logf("Extracted token: %s", token)
+
+	// Need to find orgUserID for User2
+	members, err := v1.ListOrgMembers(orgID)
+	require.NoError(t, err)
+
+	var orgUserID string
+	for _, m := range members {
+		if m.Email == email2 {
+			orgUserID = m.ID
+			break
+		}
+	}
+	require.NotEmpty(t, orgUserID, "User2 not found in org members")
+
+	// 3. User2 accepts the invite
+	v2 := APILogin(t, testServer, email2, password)
+	err = v2.AcceptOrgInvite(orgID, orgUserID, token)
+	require.NoError(t, err)
+
+	// User1 confirms User2
+	err = v1.ConfirmMember(orgID, orgUserID)
+	require.NoError(t, err)
+
+	// 4. Create Collection and Cipher
+	// Note: We already created "Shared Collection" during CreateOrganization
+	// Need to fetch collection ID
+	colls, err := v1.ListCollections(orgID)
+	require.NoError(t, err)
+	require.NotEmpty(t, colls, "Expected at least one collection")
+	sharedCollID := colls[0].ID
+
+	// Create and share cipher
+	sharedCipher := vault.NewCipher(vault.CipherTypeLogin, "Shared Browser Login")
+	sharedCipher.SetLogin("shareduser", "sharedpass")
+	err = v1.CreateOrgCipher(orgID, sharedCollID, sharedCipher)
+	require.NoError(t, err)
+
+	time.Sleep(10 * time.Second) // wait for sync and db writes
+
+	// 5. Spin up browsers
+	_, browser, page2 := SetupPlaywright(t)
+	page2.Context().SetDefaultTimeout(15000)
+
+	// Verify User2 can see it
+	BrowserLogin(t, page2, testServer, email2, password)
+
+	BrowserVerifyCipherData(t, page2, "Shared Browser Login", map[string]string{
+		"username": "shareduser",
+		"password": "sharedpass",
+	})
+	t.Log("User2 verified shared cipher")
+	_ = page2.Context().Close()
+
+	// Verify User1 can see it
+	newContext1, err := browser.NewContext(playwright.BrowserNewContextOptions{
+		IgnoreHttpsErrors: playwright.Bool(true),
+	})
+	require.NoError(t, err)
+	newContext1.SetDefaultTimeout(10000)
+	page1, err := newContext1.NewPage()
+	require.NoError(t, err)
+
+	BrowserLogin(t, page1, testServer, email1, password)
+
+	BrowserVerifyCipherData(t, page1, "Shared Browser Login", map[string]string{
+		"username": "shareduser",
+		"password": "sharedpass",
+	})
+	t.Log("User1 verified shared cipher")
+	_ = page1.Context().Close()
+
+	// 6. User1 rotates password
+	v1Client := APILogin(t, testServer, email1, password)
+	err = v1Client.ChangePassword(password, newPassword1)
+	require.NoError(t, err, "ChangePassword should succeed")
+	t.Log("Rotated password for User1 via API")
+	time.Sleep(2 * time.Second)
+
+	// 7. Verify User1 can STILL see it after rotation
+	newContext1Rotated, err := browser.NewContext(playwright.BrowserNewContextOptions{
+		IgnoreHttpsErrors: playwright.Bool(true),
+	})
+	require.NoError(t, err)
+	newContext1Rotated.SetDefaultTimeout(10000)
+	page1Rotated, err := newContext1Rotated.NewPage()
+	require.NoError(t, err)
+	defer newContext1Rotated.Close()
+
+	BrowserLogin(t, page1Rotated, testServer, email1, newPassword1)
+
+	time.Sleep(3 * time.Second)
+	_, _ = page1Rotated.Reload()
+	time.Sleep(2 * time.Second)
+
+	BrowserVerifyCipherData(t, page1Rotated, "Shared Browser Login", map[string]string{
+		"username": "shareduser",
+		"password": "sharedpass",
+	})
+	t.Log("User1 verified shared cipher AFTER password rotation")
+}

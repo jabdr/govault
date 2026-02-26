@@ -68,6 +68,8 @@ type InviteRequest struct {
 	Emails      []string              `json:"emails"`
 	Type        int                   `json:"type"`
 	Collections []CollectionSelection `json:"collections,omitempty"`
+	AccessAll   bool                  `json:"accessAll"`
+	Groups      []string              `json:"groups"`
 }
 
 // CollectionSelection specifies access for a collection.
@@ -84,6 +86,22 @@ func (c *Client) InviteToOrganization(orgID string, req *InviteRequest) error {
 	err := c.doRequest(http.MethodPost, "/api/organizations/"+orgID+"/users/invite", req, nil)
 	if err != nil {
 		return fmt.Errorf("api: invite to org: %w", err)
+	}
+	return nil
+}
+
+// AcceptOrgInviteRequest is the request to accept an org invite.
+type AcceptOrgInviteRequest struct {
+	Token string `json:"token"`
+}
+
+// AcceptOrgInvite accepts an organization invite.
+func (c *Client) AcceptOrgInvite(orgID, orgUserID string, req *AcceptOrgInviteRequest) error {
+	c.logger.Info("accepting org invite", "orgID", orgID, "orgUserID", orgUserID)
+	path := fmt.Sprintf("/api/organizations/%s/users/%s/accept", orgID, orgUserID)
+	err := c.doRequest(http.MethodPost, path, req, nil)
+	if err != nil {
+		return fmt.Errorf("api: accept org invite: %w", err)
 	}
 	return nil
 }

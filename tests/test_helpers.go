@@ -14,7 +14,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -24,7 +26,10 @@ import (
 	"github.com/jabdr/govault/pkg/vault"
 )
 
-var globalTestServer string
+var (
+	globalTestServer string
+	globalMailpitAPI string
+)
 
 func init() {
 	// Skip TLS verification for all API tests against local Vaultwarden
@@ -60,12 +65,41 @@ func SetupTestServer() (string, func()) {
 	}
 
 	ctx := context.Background()
+
+	mailpitReq := testcontainers.ContainerRequest{
+		Image:        "axllent/mailpit:latest",
+		ExposedPorts: []string{"1025/tcp", "8025/tcp"},
+		WaitingFor:   wait.ForHTTP("/api/v1/messages").WithPort("8025/tcp"),
+	}
+	mailpit, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: mailpitReq,
+		Started:          true,
+	})
+	if err != nil {
+		panic(fmt.Sprintf("failed to start mailpit container: %v", err))
+	}
+
+	mailpitIP, err := mailpit.ContainerIP(ctx)
+	if err != nil {
+		panic(fmt.Sprintf("failed to get mailpit ip: %v", err))
+	}
+
+	mailpitPort, _ := mailpit.MappedPort(ctx, "8025/tcp")
+	mailpitHost, _ := mailpit.Host(ctx)
+	globalMailpitAPI = fmt.Sprintf("http://%s:%s/api/v1/messages", mailpitHost, mailpitPort.Port())
+
 	req := testcontainers.ContainerRequest{
 		Image:        "vaultwarden/server:latest",
 		ExposedPorts: []string{"80/tcp"},
 		Env: map[string]string{
 			"I_REALLY_WANT_VOLATILE_STORAGE": "true",
 			"ROCKET_TLS":                     `{certs="/ssl/certs.pem",key="/ssl/key.pem"}`,
+			"LOG_LEVEL":                      "debug",
+			"ADMIN_TOKEN":                    "test-admin-token",
+			"SMTP_HOST":                      mailpitIP,
+			"SMTP_PORT":                      "1025",
+			"SMTP_FROM":                      "vaultwarden@test.local",
+			"SMTP_SECURITY":                  "off",
 		},
 		Files: []testcontainers.ContainerFile{
 			{
@@ -87,12 +121,14 @@ func SetupTestServer() (string, func()) {
 		Started:          true,
 	})
 	if err != nil {
+		_ = mailpit.Terminate(ctx)
 		os.RemoveAll(certDir)
 		panic(fmt.Sprintf("failed to start vaultwarden container: %v", err))
 	}
 
 	teardown := func() {
 		_ = vaultwarden.Terminate(ctx)
+		_ = mailpit.Terminate(ctx)
 		_ = os.RemoveAll(certDir)
 	}
 
@@ -194,4 +230,63 @@ func APILogin(t *testing.T, serverURL, email, password string) *vault.Vault {
 	v, err := vault.Login(serverURL, email, password, GetTestLogger())
 	require.NoError(t, err, "API login failed")
 	return v
+}
+
+// GetInviteToken queries Mailpit for the token sent to the given email address.
+func GetInviteToken(t *testing.T, toEmail string) string {
+	t.Helper()
+	for i := 0; i < 10; i++ {
+		resp, err := http.Get(globalMailpitAPI)
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+
+			var data struct {
+				Messages []struct {
+					ID string `json:"ID"`
+					To []struct {
+						Address string `json:"Address"`
+					} `json:"To"`
+				} `json:"messages"`
+			}
+			if err := json.Unmarshal(body, &data); err == nil {
+				for _, msg := range data.Messages {
+					for _, to := range msg.To {
+						if to.Address == toEmail {
+							// Found message, get full content
+							fullMsgURL := strings.Replace(globalMailpitAPI, "/messages", "/message/"+msg.ID, 1)
+							msgResp, err := http.Get(fullMsgURL)
+							if err == nil {
+								msgBody, _ := io.ReadAll(msgResp.Body)
+								msgResp.Body.Close()
+
+								var fullMsg struct {
+									Text string `json:"Text"`
+									HTML string `json:"HTML"`
+								}
+								if err := json.Unmarshal(msgBody, &fullMsg); err == nil {
+									bodyStr := fullMsg.Text
+									if bodyStr == "" {
+										bodyStr = fullMsg.HTML
+									}
+									idx := strings.Index(bodyStr, "token=")
+									if idx != -1 {
+										tokenStr := bodyStr[idx+6:]
+										endIdx := strings.IndexAny(tokenStr, "\"\r\n& <")
+										if endIdx != -1 {
+											tokenStr = tokenStr[:endIdx]
+										}
+										return tokenStr
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		time.Sleep(1 * time.Second)
+	}
+	t.Fatalf("failed to find invite token for %s", toEmail)
+	return ""
 }

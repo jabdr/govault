@@ -29,9 +29,12 @@ func (v *Vault) CreateOrganization(name, billingEmail, collectionName string) (s
 		return "", fmt.Errorf("vault: generate org RSA key pair: %w", err)
 	}
 
-	// Encrypt org symmetric key with our RSA public key (it will be stored
-	// as the owner's org key, decryptable with our private key)
-	encOrgKey, err := crypto.EncryptOrgKeyForMember(orgKey, pubDER)
+	// Encrypt org symmetric key with our own (user) RSA public key so we can decrypt it later
+	ownerPubDER, err := crypto.PublicKeyFromPrivate(v.privateKey)
+	if err != nil {
+		return "", fmt.Errorf("vault: get user public key: %w", err)
+	}
+	encOrgKey, err := crypto.EncryptOrgKeyForMember(orgKey, ownerPubDER)
 	if err != nil {
 		return "", fmt.Errorf("vault: encrypt org key: %w", err)
 	}
@@ -84,8 +87,18 @@ func (v *Vault) ListOrganizations() ([]OrgInfo, error) {
 // InviteToOrganization invites email addresses to an organization.
 func (v *Vault) InviteToOrganization(orgID string, emails []string, memberType int) error {
 	return v.client.InviteToOrganization(orgID, &api.InviteRequest{
-		Emails: emails,
-		Type:   memberType,
+		Emails:      emails,
+		Type:        memberType,
+		AccessAll:   true,
+		Collections: []api.CollectionSelection{},
+		Groups:      []string{},
+	})
+}
+
+// AcceptOrgInvite accepts an organization invitation.
+func (v *Vault) AcceptOrgInvite(orgID, orgUserID, token string) error {
+	return v.client.AcceptOrgInvite(orgID, orgUserID, &api.AcceptOrgInviteRequest{
+		Token: token,
 	})
 }
 
