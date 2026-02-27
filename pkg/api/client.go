@@ -4,6 +4,7 @@ package api
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -43,6 +44,18 @@ func (c *Client) SetTokens(accessToken, refreshToken string) {
 	c.refreshToken = refreshToken
 }
 
+// SetInsecureSkipVerify enables bypassing TLS certificate verification.
+func (c *Client) SetInsecureSkipVerify(skip bool) {
+	if skip {
+		t := http.DefaultTransport.(*http.Transport).Clone()
+		if t.TLSClientConfig == nil {
+			t.TLSClientConfig = &tls.Config{}
+		}
+		t.TLSClientConfig.InsecureSkipVerify = true
+		c.httpClient.Transport = t
+	}
+}
+
 // BaseURL returns the configured base URL.
 func (c *Client) BaseURL() string {
 	return c.baseURL
@@ -57,20 +70,25 @@ func (c *Client) doRequestRaw(method, path, contentType string, body any, result
 	url := c.baseURL + path
 
 	var bodyReader io.Reader
+	var reqBodyBytes []byte
+
 	if body != nil {
 		switch v := body.(type) {
 		case string:
 			bodyReader = strings.NewReader(v)
+			reqBodyBytes = []byte(v)
 		case []byte:
 			bodyReader = bytes.NewReader(v)
+			reqBodyBytes = v
 		case io.Reader:
 			bodyReader = v
 		default:
-			jsonData, err := json.Marshal(body)
+			var err error
+			reqBodyBytes, err = json.Marshal(body)
 			if err != nil {
 				return fmt.Errorf("api: marshal request body: %w", err)
 			}
-			bodyReader = bytes.NewReader(jsonData)
+			bodyReader = bytes.NewReader(reqBodyBytes)
 		}
 	}
 
@@ -108,6 +126,9 @@ func (c *Client) doRequestRaw(method, path, contentType string, body any, result
 	c.logger.Debug("API response", "status", resp.StatusCode, "size", len(respBody))
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resp.StatusCode == 422 && reqBodyBytes != nil {
+			c.logger.Error("HTTP 422 Unprocessable Entity", "requestPayload", string(reqBodyBytes))
+		}
 		return &APIError{
 			StatusCode: resp.StatusCode,
 			Body:       string(respBody),

@@ -231,7 +231,7 @@ func RegisterTestUser(t *testing.T, serverURL, email, password string) {
 // APILogin logs in and returns a configured Vault client.
 func APILogin(t *testing.T, serverURL, email, password string) *vault.Vault {
 	t.Helper()
-	v, err := vault.Login(serverURL, email, password, GetTestLogger())
+	v, err := vault.Login(serverURL, email, password, true, GetTestLogger())
 	require.NoError(t, err, "API login failed")
 	return v
 }

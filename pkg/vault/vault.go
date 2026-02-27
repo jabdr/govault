@@ -27,12 +27,13 @@ type Vault struct {
 }
 
 // Login authenticates with the server and sets up the vault.
-func Login(serverURL, email, password string, logger *slog.Logger) (*Vault, error) {
+func Login(serverURL, email, password string, insecure bool, logger *slog.Logger) (*Vault, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	client := api.NewClient(serverURL, logger)
+	client.SetInsecureSkipVerify(insecure)
 	email = strings.ToLower(strings.TrimSpace(email))
 
 	prelogin, err := client.Prelogin(email)
@@ -62,12 +63,13 @@ func Login(serverURL, email, password string, logger *slog.Logger) (*Vault, erro
 }
 
 // LoginAPIKey authenticates with the server using an API key and sets up the vault.
-func LoginAPIKey(serverURL, clientID, clientSecret, email, password string, logger *slog.Logger) (*Vault, error) {
+func LoginAPIKey(serverURL, clientID, clientSecret, email, password string, insecure bool, logger *slog.Logger) (*Vault, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	client := api.NewClient(serverURL, logger)
+	client.SetInsecureSkipVerify(insecure)
 	email = strings.ToLower(strings.TrimSpace(email))
 
 	prelogin, err := client.Prelogin(email)

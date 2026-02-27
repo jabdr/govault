@@ -232,7 +232,7 @@ func TestAPIKeyLogin(t *testing.T) {
 	require.NotEmpty(t, clientSecret, "Client Secret should not be empty")
 
 	// Now try logging in with the API key
-	v2, err := vault.LoginAPIKey(testServer, clientID, clientSecret, email, password, GetTestLogger())
+	v2, err := vault.LoginAPIKey(testServer, clientID, clientSecret, email, password, true, GetTestLogger())
 	require.NoError(t, err, "API Key Login should succeed")
 
 	c := vault.NewCipher(vault.CipherTypeLogin, "Integration Test Login API Key")

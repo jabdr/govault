@@ -17,8 +17,8 @@ type CollectionResponse struct {
 type CreateCollectionRequest struct {
 	Name       string                  `json:"name"`
 	ExternalID string                  `json:"externalId,omitempty"`
-	Groups     []CollectionGroupAccess `json:"groups,omitempty"`
-	Users      []CollectionUserAccess  `json:"users,omitempty"`
+	Groups     []CollectionGroupAccess `json:"groups"`
+	Users      []CollectionUserAccess  `json:"users"`
 }
 
 // CollectionGroupAccess specifies group access to a collection.

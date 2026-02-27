@@ -53,7 +53,9 @@ func (v *Vault) CreateCollection(orgID, name string) (*Collection, error) {
 	}
 
 	resp, err := v.client.CreateCollection(orgID, &api.CreateCollectionRequest{
-		Name: encName.String(),
+		Name:   encName.String(),
+		Groups: make([]api.CollectionGroupAccess, 0),
+		Users:  make([]api.CollectionUserAccess, 0),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("vault: create collection: %w", err)
@@ -64,6 +66,20 @@ func (v *Vault) CreateCollection(orgID, name string) (*Collection, error) {
 		OrganizationID: resp.OrganizationID,
 		Name:           name,
 	}, nil
+}
+
+// GetCollection returns a decrypted collection by ID.
+func (v *Vault) GetCollection(orgID, collectionID string) (*Collection, error) {
+	cols, err := v.ListCollections(orgID)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range cols {
+		if c.ID == collectionID {
+			return &c, nil
+		}
+	}
+	return nil, fmt.Errorf("vault: collection not found")
 }
 
 // UpdateCollection updates a collection's name.
@@ -79,7 +95,42 @@ func (v *Vault) UpdateCollection(orgID, collectionID, name string) error {
 	}
 
 	_, err = v.client.UpdateCollection(orgID, collectionID, &api.CreateCollectionRequest{
-		Name: encName.String(),
+		Name:   encName.String(),
+		Groups: make([]api.CollectionGroupAccess, 0),
+		Users:  make([]api.CollectionUserAccess, 0),
+	})
+	return err
+}
+
+// UpdateCollectionPermissions updates a collection's groups and users access.
+func (v *Vault) UpdateCollectionPermissions(orgID, collectionID string, groups []api.CollectionGroupAccess, users []api.CollectionUserAccess) error {
+	col, err := v.GetCollection(orgID, collectionID)
+	if err != nil {
+		return err
+	}
+
+	orgKey, err := v.GetOrgKey(orgID)
+	if err != nil {
+		return fmt.Errorf("vault: update collection perms org key: %w", err)
+	}
+
+	encName, err := crypto.EncryptToEncString([]byte(col.Name), orgKey)
+	if err != nil {
+		return fmt.Errorf("vault: encrypt collection name: %w", err)
+	}
+
+	if groups == nil {
+		groups = make([]api.CollectionGroupAccess, 0)
+	}
+	if users == nil {
+		users = make([]api.CollectionUserAccess, 0)
+	}
+
+	_, err = v.client.UpdateCollection(orgID, collectionID, &api.CreateCollectionRequest{
+		Name:       encName.String(),
+		ExternalID: col.ExternalID,
+		Groups:     groups,
+		Users:      users,
 	})
 	return err
 }

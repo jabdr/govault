@@ -13,9 +13,18 @@ services:
       LOGIN_RATELIMIT_SECONDS: "1"
       ADMIN_RATELIMIT_MAX_BURST: "1000"
       ADMIN_RATELIMIT_SECONDS: "1"
+      SMTP_HOST:                      "mailpit"
+      SMTP_PORT:                      "1025"
+      SMTP_FROM:                      "vaultwarden@test.local"
+      SMTP_SECURITY:                  "off"
     ports:
       - "8443:80"
     volumes:
       - ./ssl:/ssl:ro
     tmpfs:
       - /data
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "8025:8025"
+      - "1025:1025"

@@ -8,36 +8,43 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"text/tabwriter"
 	"time"
 
+	"github.com/jabdr/govault/pkg/api"
 	"github.com/jabdr/govault/pkg/vault"
 )
 
 func main() {
 	var (
-		action        string
-		server        string
-		email         string
-		password      string
-		id            string
-		orgID         string
-		collectionID  string
-		name          string
-		username      string
-		loginPassword string
-		newPassword   string
-		inviteEmail   string
-		text          string
-		accessType    int
-		waitDays      int
-		verbose       bool
-		clientID      string
-		clientSecret  string
+		action             string
+		server             string
+		email              string
+		password           string
+		id                 string
+		orgID              string
+		collectionID       string
+		name               string
+		username           string
+		loginPassword      string
+		newPassword        string
+		inviteEmail        string
+		text               string
+		accessType         int
+		waitDays           int
+		verbose            bool
+		accessAll          bool
+		insecureSkipVerify bool
+		clientID           string
+		clientSecret       string
+		usersAccess        string
+		groupsAccess       string
 	)
 
 	flag.StringVar(&action, "action", "", "Action: list, get, create, update, delete, change-password, "+
 		"org-list, org-members, org-invite, org-confirm, "+
-		"collections, collection-create, collection-delete, "+
+		"collections, collection-create, collection-update, collection-delete, "+
+		"groups, group-create, group-update, group-delete, "+
 		"sends, send-create, send-get, send-delete, "+
 		"emergency-trusted, emergency-granted, emergency-invite, emergency-confirm, "+
 		"emergency-initiate, emergency-approve, emergency-reject, emergency-view, emergency-takeover")
@@ -56,8 +63,12 @@ func main() {
 	flag.IntVar(&accessType, "access-type", 0, "Emergency access type: 0=view, 1=takeover")
 	flag.IntVar(&waitDays, "wait-days", 7, "Emergency access wait time in days")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
+	flag.BoolVar(&accessAll, "access-all", false, "Group access all collections")
+	flag.BoolVar(&insecureSkipVerify, "insecure-skip-verify", false, "Skip TLS verify")
 	flag.StringVar(&clientID, "client-id", "", "API Client ID (or set GOVAULT_CLIENT_ID)")
 	flag.StringVar(&clientSecret, "client-secret", "", "API Client Secret (or set GOVAULT_CLIENT_SECRET)")
+	flag.StringVar(&usersAccess, "users-access", "", "JSON array of user access for collection")
+	flag.StringVar(&groupsAccess, "groups-access", "", "JSON array of group access for collection")
 	flag.Parse()
 
 	if action == "" {
@@ -95,9 +106,9 @@ func main() {
 	var v *vault.Vault
 	var err error
 	if clientID != "" && clientSecret != "" {
-		v, err = vault.LoginAPIKey(server, clientID, clientSecret, email, password, logger)
+		v, err = vault.LoginAPIKey(server, clientID, clientSecret, email, password, insecureSkipVerify, logger)
 	} else {
-		v, err = vault.Login(server, email, password, logger)
+		v, err = vault.Login(server, email, password, insecureSkipVerify, logger)
 	}
 
 	if err != nil {
@@ -130,8 +141,18 @@ func main() {
 		actionCollections(v, orgID)
 	case "collection-create":
 		actionCollectionCreate(v, orgID, name)
+	case "collection-update":
+		actionCollectionUpdate(v, orgID, collectionID, usersAccess, groupsAccess)
 	case "collection-delete":
 		actionCollectionDelete(v, orgID, collectionID)
+	case "groups":
+		actionGroups(v, orgID)
+	case "group-create":
+		actionGroupCreate(v, orgID, name, accessAll)
+	case "group-update":
+		actionGroupUpdate(v, orgID, id, name, accessAll)
+	case "group-delete":
+		actionGroupDelete(v, orgID, id)
 	case "sends":
 		actionSends(v)
 	case "send-create":
@@ -272,6 +293,173 @@ func actionCollectionCreate(v *vault.Vault, orgID, name string) {
 	col, err := v.CreateCollection(orgID, name)
 	exitOnErr(err)
 	fmt.Printf("Created: %s\n", col.ID)
+}
+
+func actionCollectionUpdate(v *vault.Vault, orgID, collectionIDOrName, reqUsers, reqGroups string) {
+	requireFlag(orgID, "-org-id")
+	requireFlag(collectionIDOrName, "-collection-id or Name")
+
+	cols, err := v.ListCollections(orgID)
+	exitOnErr(err)
+
+	collectionID := collectionIDOrName
+	for _, c := range cols {
+		if c.Name == collectionIDOrName {
+			collectionID = c.ID
+			break
+		}
+	}
+
+	var parsedUsers []map[string]interface{}
+	var parsedGroups []map[string]interface{}
+
+	if reqUsers != "" {
+		if err := json.Unmarshal([]byte(reqUsers), &parsedUsers); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing --users-access JSON: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	if reqGroups != "" {
+		if err := json.Unmarshal([]byte(reqGroups), &parsedGroups); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing --groups-access JSON: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	members, err := v.ListOrgMembers(orgID)
+	exitOnErr(err)
+	memberMap := make(map[string]string) // email -> id
+	for _, m := range members {
+		memberMap[m.Email] = m.ID
+	}
+
+	groups, _ := v.ListGroups(orgID)    // Might fail if groups not supported, ignore err
+	groupMap := make(map[string]string) // name -> id
+	for _, g := range groups {
+		groupMap[g.Name] = g.ID
+	}
+
+	var users []api.CollectionUserAccess
+	var groupsAccess []api.CollectionGroupAccess
+
+	for _, pu := range parsedUsers {
+		id := pu["id"].(string)
+		if email, ok := pu["email"].(string); ok && email != "" {
+			if matchedID, found := memberMap[email]; found {
+				id = matchedID
+			}
+		} else if emailOrID, ok := pu["id"].(string); ok {
+			if matchedID, found := memberMap[emailOrID]; found {
+				id = matchedID
+			}
+		}
+
+		ro, _ := pu["readOnly"].(bool)
+		hp, _ := pu["hidePasswords"].(bool)
+		mng, _ := pu["manage"].(bool)
+		users = append(users, api.CollectionUserAccess{
+			ID:            id,
+			ReadOnly:      ro,
+			HidePasswords: hp,
+			Manage:        mng,
+		})
+	}
+
+	for _, pg := range parsedGroups {
+		id := pg["id"].(string)
+		if name, ok := pg["name"].(string); ok && name != "" {
+			if matchedID, found := groupMap[name]; found {
+				id = matchedID
+			}
+		} else if nameOrID, ok := pg["id"].(string); ok {
+			if matchedID, found := groupMap[nameOrID]; found {
+				id = matchedID
+			}
+		}
+
+		ro, _ := pg["readOnly"].(bool)
+		hp, _ := pg["hidePasswords"].(bool)
+		mng, _ := pg["manage"].(bool)
+		groupsAccess = append(groupsAccess, api.CollectionGroupAccess{
+			ID:            id,
+			ReadOnly:      ro,
+			HidePasswords: hp,
+			Manage:        mng,
+		})
+	}
+
+	err = v.UpdateCollectionPermissions(orgID, collectionID, groupsAccess, users)
+	exitOnErr(err)
+	fmt.Printf("Collection permissions updated for %s\n", collectionID)
+}
+
+func actionGroups(v *vault.Vault, orgID string) {
+	requireFlag(orgID, "-org-id")
+
+	groups, err := v.ListGroups(orgID)
+	exitOnErr(err)
+
+	if len(groups) == 0 {
+		fmt.Println("No groups found.")
+		return
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tNAME\tACCESS ALL")
+	for _, g := range groups {
+		fmt.Fprintf(w, "%s\t%s\t%t\n", g.ID, g.Name, g.AccessAll)
+	}
+	w.Flush()
+}
+
+func actionGroupCreate(v *vault.Vault, orgID, name string, accessAll bool) {
+	requireFlag(orgID, "-org-id")
+	requireFlag(name, "-name")
+
+	grp, err := v.CreateGroup(orgID, name, accessAll)
+	exitOnErr(err)
+	fmt.Printf("Created Group: %s (ID: %s)\n", grp.Name, grp.ID)
+}
+
+func actionGroupUpdate(v *vault.Vault, orgID, idOrName, name string, accessAll bool) {
+	requireFlag(orgID, "-org-id")
+	requireFlag(idOrName, "-id or Name")
+	requireFlag(name, "-name")
+
+	groups, err := v.ListGroups(orgID)
+	exitOnErr(err)
+
+	groupID := idOrName
+	for _, g := range groups {
+		if g.Name == idOrName {
+			groupID = g.ID
+			break
+		}
+	}
+
+	err = v.UpdateGroup(orgID, groupID, name, accessAll)
+	exitOnErr(err)
+	fmt.Printf("Updated Group: %s\n", groupID)
+}
+
+func actionGroupDelete(v *vault.Vault, orgID, idOrName string) {
+	requireFlag(orgID, "-org-id")
+	requireFlag(idOrName, "-id or Name")
+
+	groups, err := v.ListGroups(orgID)
+	exitOnErr(err)
+
+	groupID := idOrName
+	for _, g := range groups {
+		if g.Name == idOrName {
+			groupID = g.ID
+			break
+		}
+	}
+
+	err = v.DeleteGroup(orgID, groupID)
+	exitOnErr(err)
+	fmt.Printf("Deleted Group: %s\n", groupID)
 }
 
 func actionCollectionDelete(v *vault.Vault, orgID, collectionID string) {
