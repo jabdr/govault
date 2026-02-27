@@ -320,9 +320,9 @@ func (v *Vault) keyForCipher(raw map[string]any) *crypto.SymmetricKey {
 }
 
 // ChangePassword changes the master password without rotating the encryption key.
-func (v *Vault) ChangePassword(currentPassword, newPassword string) error {
+func (v *Vault) ChangePassword(currentPassword, newPassword string, kdf, kdfIter, kdfMem, kdfParal int) error {
 	// Derive new master key
-	newMasterKey, err := crypto.DeriveKey([]byte(newPassword), []byte(v.email), 0, 600000, nil, nil)
+	newMasterKey, err := crypto.DeriveKey([]byte(newPassword), []byte(v.email), kdf, kdfIter, &kdfMem, &kdfParal)
 	if err != nil {
 		return fmt.Errorf("vault: derive new master key: %w", err)
 	}
@@ -349,6 +349,10 @@ func (v *Vault) ChangePassword(currentPassword, newPassword string) error {
 		MasterPasswordHash:    v.passwordHash,
 		NewMasterPasswordHash: newPasswordHash,
 		Key:                   newProtectedKey.String(),
+		Kdf:                   kdf,
+		KdfIterations:         kdfIter,
+		KdfMemory:             kdfMem,
+		KdfParallelism:        kdfParal,
 	})
 	if err != nil {
 		return fmt.Errorf("vault: change password: %w", err)

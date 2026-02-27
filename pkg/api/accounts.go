@@ -11,6 +11,10 @@ type ChangePasswordRequest struct {
 	NewMasterPasswordHash string `json:"newMasterPasswordHash"`
 	MasterPasswordHint    string `json:"masterPasswordHint,omitempty"`
 	Key                   string `json:"key"`
+	Kdf                   int    `json:"kdf"`
+	KdfIterations         int    `json:"kdfIterations"`
+	KdfMemory             int    `json:"kdfMemory,omitempty"`
+	KdfParallelism        int    `json:"kdfParallelism,omitempty"`
 }
 
 // ChangePassword changes the master password and re-encrypted symmetric key.

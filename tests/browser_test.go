@@ -139,7 +139,7 @@ func TestPasswordRotationBrowser(t *testing.T) {
 
 	// 4. Change Password via API client
 	v := APILogin(t, testServer, email, password)
-	err := v.ChangePassword(password, newPassword)
+	err := v.ChangePassword(password, newPassword, 0, 600000, 64, 4)
 	require.NoError(t, err, "ChangePassword should succeed")
 	t.Log("Rotated password via API")
 	time.Sleep(2 * time.Second) // wait slightly just in case
@@ -182,7 +182,7 @@ func TestSharedCipherRotationBrowser(t *testing.T) {
 	email1 := "user1@example.com"
 	email2 := "user2@example.com"
 	password := "password123"
-	newPassword1 := "new-pass-user1-456"
+	newPassword1 := "rotated-password-123"
 
 	// 1. Register users
 	RegisterTestUser(t, testServer, email1, password)
@@ -273,7 +273,7 @@ func TestSharedCipherRotationBrowser(t *testing.T) {
 
 	// 6. User1 rotates password
 	v1Client := APILogin(t, testServer, email1, password)
-	err = v1Client.ChangePassword(password, newPassword1)
+	err = v1Client.ChangePassword(password, newPassword1, 0, 600000, 64, 4)
 	require.NoError(t, err, "ChangePassword should succeed")
 	t.Log("Rotated password for User1 via API")
 	time.Sleep(2 * time.Second)
