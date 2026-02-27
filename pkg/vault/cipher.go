@@ -146,20 +146,20 @@ func (c *Cipher) Encrypt(key *crypto.SymmetricKey) (map[string]any, error) {
 
 	// Encrypt name
 	if name, ok := c.data["name"].(string); ok {
-		enc, err := crypto.EncryptToEncString([]byte(name), key)
+		encStr, err := encryptIfNotEncrypted(name, key)
 		if err != nil {
 			return nil, fmt.Errorf("cipher: encrypt name: %w", err)
 		}
-		result["name"] = enc.String()
+		result["name"] = encStr
 	}
 
 	// Encrypt notes
 	if notes, ok := c.data["notes"].(string); ok && notes != "" {
-		enc, err := crypto.EncryptToEncString([]byte(notes), key)
+		encStr, err := encryptIfNotEncrypted(notes, key)
 		if err != nil {
 			return nil, fmt.Errorf("cipher: encrypt notes: %w", err)
 		}
-		result["notes"] = enc.String()
+		result["notes"] = encStr
 	}
 
 	// Encrypt login fields
@@ -170,11 +170,11 @@ func (c *Cipher) Encrypt(key *crypto.SymmetricKey) (map[string]any, error) {
 		}
 		for _, field := range []string{"username", "password", "totp"} {
 			if val, ok := login[field].(string); ok && val != "" {
-				enc, err := crypto.EncryptToEncString([]byte(val), key)
+				encStr, err := encryptIfNotEncrypted(val, key)
 				if err != nil {
 					return nil, fmt.Errorf("cipher: encrypt login.%s: %w", field, err)
 				}
-				encLogin[field] = enc.String()
+				encLogin[field] = encStr
 			}
 		}
 		// Encrypt URIs
@@ -187,11 +187,11 @@ func (c *Cipher) Encrypt(key *crypto.SymmetricKey) (map[string]any, error) {
 						encURI[k] = v
 					}
 					if uri, ok := uriMap["uri"].(string); ok && uri != "" {
-						enc, err := crypto.EncryptToEncString([]byte(uri), key)
+						encStr, err := encryptIfNotEncrypted(uri, key)
 						if err != nil {
 							return nil, fmt.Errorf("cipher: encrypt uri: %w", err)
 						}
-						encURI["uri"] = enc.String()
+						encURI["uri"] = encStr
 					}
 					encURIs[i] = encURI
 				}
@@ -212,11 +212,11 @@ func (c *Cipher) Encrypt(key *crypto.SymmetricKey) (map[string]any, error) {
 				}
 				for _, field := range []string{"name", "value"} {
 					if val, ok := fMap[field].(string); ok && val != "" {
-						enc, err := crypto.EncryptToEncString([]byte(val), key)
+						encStr, err := encryptIfNotEncrypted(val, key)
 						if err != nil {
 							return nil, fmt.Errorf("cipher: encrypt field.%s: %w", field, err)
 						}
-						encField[field] = enc.String()
+						encField[field] = encStr
 					}
 				}
 				encFields[i] = encField
@@ -246,4 +246,20 @@ func (c *Cipher) decryptString(s string) string {
 		return s // Decryption failed, return as-is
 	}
 	return string(decrypted)
+}
+
+func encryptIfNotEncrypted(val string, key *crypto.SymmetricKey) (string, error) {
+	if val == "" {
+		return "", nil
+	}
+	_, err := crypto.ParseEncString(val)
+	if err == nil {
+		// Valid encrypted string, do not double encrypt
+		return val, nil
+	}
+	enc, err := crypto.EncryptToEncString([]byte(val), key)
+	if err != nil {
+		return "", err
+	}
+	return enc.String(), nil
 }

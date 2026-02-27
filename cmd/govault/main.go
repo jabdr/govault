@@ -165,7 +165,7 @@ func cipherCmd() *cli.Command {
 					&cli.StringFlag{Name: "login-password", Usage: "Login password"},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					actionUpdate(vClient, cmd.String("id"), cmd.String("name"), cmd.String("username"), cmd.String("login-password"))
+					actionUpdate(vClient, cmd)
 					return nil
 				},
 			},
@@ -671,15 +671,24 @@ func actionCreate(v *vault.Vault, name, username, loginPassword string) {
 	fmt.Printf("Created cipher: %s\n", c.ID())
 }
 
-func actionUpdate(v *vault.Vault, id, name, username, loginPassword string) {
+func actionUpdate(v *vault.Vault, cmd *cli.Command) {
+	id := cmd.String("id")
 	c, err := v.GetCipher(id)
 	exitOnErr(err)
 
-	if name != "" {
-		c.SetField("name", name)
+	if cmd.IsSet("name") {
+		c.SetField("name", cmd.String("name"))
 	}
-	if username != "" || loginPassword != "" {
-		c.SetLogin(username, loginPassword)
+
+	if cmd.IsSet("username") || cmd.IsSet("login-password") {
+		u, p, _ := c.GetLogin()
+		if cmd.IsSet("username") {
+			u = cmd.String("username")
+		}
+		if cmd.IsSet("login-password") {
+			p = cmd.String("login-password")
+		}
+		c.SetLogin(u, p)
 	}
 
 	err = v.UpdateCipher(c)
