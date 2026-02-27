@@ -16,15 +16,18 @@ func testKey(t *testing.T) *crypto.SymmetricKey {
 }
 
 func TestCipherNewAndAccessors(t *testing.T) {
-	c := NewCipher(CipherTypeLogin, "Test Login")
+	c, err := NewCipher(CipherTypeLogin, "Test Login", testKey(t))
+	require.NoError(t, err)
 	assert.Equal(t, CipherTypeLogin, c.Type(), "expected type")
 	assert.Equal(t, "Test Login", c.Name(), "expected name")
 	assert.Empty(t, c.OrganizationID(), "expected empty org ID")
 }
 
 func TestCipherSetGetField(t *testing.T) {
-	c := NewCipher(CipherTypeLogin, "Test")
-	c.SetField("customField", "customValue")
+	c, err := NewCipher(CipherTypeLogin, "Test", testKey(t))
+	require.NoError(t, err)
+	err = c.SetField("customField", "customValue")
+	require.NoError(t, err, "SetField")
 
 	val, err := c.GetField("customField")
 	require.NoError(t, err, "GetField")
@@ -35,8 +38,10 @@ func TestCipherSetGetField(t *testing.T) {
 }
 
 func TestCipherLoginGetSet(t *testing.T) {
-	c := NewCipher(CipherTypeLogin, "Login Entry")
-	c.SetLogin("user@example.com", "s3cret!")
+	c, err := NewCipher(CipherTypeLogin, "Login Entry", testKey(t))
+	require.NoError(t, err)
+	c.SetLoginUsername("user@example.com")
+	c.SetLoginPassword("s3cret!")
 
 	username, password, err := c.GetLogin()
 	require.NoError(t, err, "GetLogin")
@@ -48,9 +53,11 @@ func TestCipherEncryptDecryptRoundtrip(t *testing.T) {
 	key := testKey(t)
 
 	// Create a cipher with plaintext fields
-	original := NewCipher(CipherTypeLogin, "My Login")
-	original.SetLogin("admin", "password123")
-	original.SetField("notes", "some notes")
+	original, err := NewCipher(CipherTypeLogin, "My Login", key)
+	require.NoError(t, err)
+	original.SetLoginUsername("admin")
+	original.SetLoginPassword("password123")
+	original.SetNotes("some notes")
 
 	// Encrypt
 	encrypted, err := original.Encrypt(key)
@@ -74,10 +81,11 @@ func TestCipherEncryptDecryptRoundtrip(t *testing.T) {
 }
 
 func TestCipherRaw(t *testing.T) {
-	c := NewCipher(CipherTypeSecureNote, "Note")
+	c, err := NewCipher(CipherTypeSecureNote, "Note", testKey(t))
+	require.NoError(t, err)
 	raw := c.Raw()
 	require.NotNil(t, raw, "Raw() returned nil")
-	assert.Equal(t, "Note", raw["name"], "expected 'Note'")
+	assert.NotEqual(t, "Note", raw["name"], "expected name to be encrypted")
 }
 
 func TestDecryptString(t *testing.T) {

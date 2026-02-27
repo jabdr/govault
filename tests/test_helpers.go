@@ -294,3 +294,86 @@ func GetInviteToken(t *testing.T, toEmail string) string {
 	t.Fatalf("failed to find invite token for %s", toEmail)
 	return ""
 }
+
+// VerifyUserEmail requests a verification email and completes it via Mailpit.
+func VerifyUserEmail(t *testing.T, v *vault.Vault, email string) {
+	t.Helper()
+
+	err := v.Client().VerifyEmail()
+	require.NoError(t, err, "request verify email")
+
+	var token, userID string
+	for i := 0; i < 10; i++ {
+		resp, err := http.Get(globalMailpitAPI)
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+
+			var data struct {
+				Messages []struct {
+					ID string `json:"ID"`
+					To []struct {
+						Address string `json:"Address"`
+					} `json:"To"`
+					Subject string `json:"Subject"`
+				} `json:"messages"`
+			}
+			if err := json.Unmarshal(body, &data); err == nil {
+				for _, msg := range data.Messages {
+					for _, to := range msg.To {
+						if to.Address == email && strings.Contains(msg.Subject, "Verify") {
+							fullMsgURL := strings.Replace(globalMailpitAPI, "/messages", "/message/"+msg.ID, 1)
+							msgResp, err := http.Get(fullMsgURL)
+							if err == nil {
+								msgBody, _ := io.ReadAll(msgResp.Body)
+								msgResp.Body.Close()
+
+								var fullMsg struct {
+									Text string `json:"Text"`
+									HTML string `json:"HTML"`
+								}
+								_ = json.Unmarshal(msgBody, &fullMsg)
+
+								bodyStr := fullMsg.Text
+								if bodyStr == "" {
+									bodyStr = fullMsg.HTML
+								}
+
+								if idx := strings.Index(bodyStr, "userId="); idx != -1 {
+									uidStr := bodyStr[idx+7:]
+									endIdx := strings.IndexAny(uidStr, "&\"\r\n <")
+									if endIdx != -1 {
+										uidStr = uidStr[:endIdx]
+									}
+									userID = uidStr
+								}
+								if idx := strings.Index(bodyStr, "token="); idx != -1 {
+									tokenStr := bodyStr[idx+6:]
+									endIdx := strings.IndexAny(tokenStr, "&\"\r\n <")
+									if endIdx != -1 {
+										tokenStr = tokenStr[:endIdx]
+									}
+									token = tokenStr
+								}
+							}
+							break
+						}
+					}
+					if token != "" {
+						break
+					}
+				}
+			}
+		}
+		if token != "" {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	require.NotEmpty(t, token, "failed to extract token from verify email")
+	require.NotEmpty(t, userID, "failed to extract user ID from verify email")
+
+	err = v.Client().VerifyEmailToken(userID, token)
+	require.NoError(t, err, "complete verify email token")
+}

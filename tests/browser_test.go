@@ -32,8 +32,9 @@ func TestAPIToUI(t *testing.T) {
 	v := APILogin(t, testServer, email, password)
 
 	cipherName := "Secret API Cipher"
-	c := vault.NewCipher(vault.CipherTypeLogin, cipherName)
-	c.SetLogin("apibot", "apipass")
+	c, _ := vault.NewCipher(vault.CipherTypeLogin, cipherName, v.SymmetricKey())
+	c.SetLoginUsername("apibot")
+	c.SetLoginPassword("apipass")
 	err := v.CreateCipher(c)
 	require.NoError(t, err, "CreateCipher from API")
 	t.Logf("Created cipher via API: %s", c.ID())
@@ -232,8 +233,9 @@ func TestSharedCipherRotationBrowser(t *testing.T) {
 	sharedCollID := colls[0].ID
 
 	// Create and share cipher
-	sharedCipher := vault.NewCipher(vault.CipherTypeLogin, "Shared Browser Login")
-	sharedCipher.SetLogin("shareduser", "sharedpass")
+	sharedCipher, _ := vault.NewCipher(vault.CipherTypeLogin, "Shared Browser Login", v1.SymmetricKey())
+	sharedCipher.SetLoginUsername("shareduser")
+	sharedCipher.SetLoginPassword("sharedpass")
 	err = v1.CreateOrgCipher(orgID, sharedCollID, sharedCipher)
 	require.NoError(t, err)
 

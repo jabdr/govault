@@ -36,9 +36,13 @@ func TestCipherCRUDLifecycle(t *testing.T) {
 	// Login
 	v := APILogin(t, testServer, email, password)
 
+	// Verify Email
+	VerifyUserEmail(t, v, email)
+
 	// Create
-	c := vault.NewCipher(vault.CipherTypeLogin, "Integration Test Login")
-	c.SetLogin("testuser", "testpass")
+	c, _ := vault.NewCipher(vault.CipherTypeLogin, "Integration Test Login", v.SymmetricKey())
+	c.SetLoginUsername("testuser")
+	c.SetLoginPassword("testpass")
 	err := v.CreateCipher(c)
 	require.NoError(t, err, "CreateCipher")
 	t.Logf("Created cipher: %s", c.ID())
@@ -49,7 +53,8 @@ func TestCipherCRUDLifecycle(t *testing.T) {
 	assert.Equal(t, "Integration Test Login", fetched.Name(), "Name mismatch")
 
 	// Update
-	c.SetField("name", "Updated Login")
+	err = c.SetName("Updated Login")
+	require.NoError(t, err, "SetName")
 	err = v.UpdateCipher(c)
 	require.NoError(t, err, "UpdateCipher")
 
@@ -235,8 +240,9 @@ func TestAPIKeyLogin(t *testing.T) {
 	v2, err := vault.LoginAPIKey(testServer, clientID, clientSecret, email, password, true, GetTestLogger())
 	require.NoError(t, err, "API Key Login should succeed")
 
-	c := vault.NewCipher(vault.CipherTypeLogin, "Integration Test Login API Key")
-	c.SetLogin("testuser", "testpass")
+	c, _ := vault.NewCipher(vault.CipherTypeLogin, "Integration Test Login API Key", v2.SymmetricKey())
+	c.SetLoginUsername("testuser")
+	c.SetLoginPassword("testpass")
 	err = v2.CreateCipher(c)
 	require.NoError(t, err, "CreateCipher with API key login")
 

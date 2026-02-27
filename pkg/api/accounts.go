@@ -75,3 +75,25 @@ func (c *Client) GetAPIKey(masterPasswordHash string) (string, error) {
 	}
 	return resp.APIKey, nil
 }
+
+// VerifyEmail requests a new verification email.
+func (c *Client) VerifyEmail() error {
+	c.logger.Info("requesting verify email")
+	if err := c.doRequest(http.MethodPost, "/api/accounts/verify-email", nil, nil); err != nil {
+		return fmt.Errorf("api: verify email request: %w", err)
+	}
+	return nil
+}
+
+// VerifyEmailToken sends the verification token to the server.
+func (c *Client) VerifyEmailToken(userID, token string) error {
+	c.logger.Info("verifying email token")
+	req := map[string]string{
+		"userId": userID,
+		"token":  token,
+	}
+	if err := c.doRequest(http.MethodPost, "/api/accounts/verify-email-token", req, nil); err != nil {
+		return fmt.Errorf("api: verify email token: %w", err)
+	}
+	return nil
+}

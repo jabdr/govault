@@ -12,24 +12,29 @@ const (
 	CipherTypeSecureNote = 2
 	CipherTypeCard       = 3
 	CipherTypeIdentity   = 4
+	CipherTypeSshKey     = 5
 )
 
 // Cipher wraps a raw cipher map with typed accessor methods.
-// The underlying data is map[string]any to accommodate changes in
-// Bitwarden's cipher format without breaking the library.
 type Cipher struct {
 	data map[string]any
 	key  *crypto.SymmetricKey // key used for encrypt/decrypt
 }
 
 // NewCipher creates a new empty cipher of the given type and name.
-func NewCipher(cipherType int, name string) *Cipher {
-	return &Cipher{
+// It immediately encrypts the name using the provided key.
+func NewCipher(cipherType int, name string, key *crypto.SymmetricKey) (*Cipher, error) {
+	c := &Cipher{
 		data: map[string]any{
 			"type": float64(cipherType),
-			"name": name,
 		},
+		key: key,
 	}
+	err := c.SetName(name)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // NewCipherFromMap wraps an existing raw cipher map.
@@ -43,7 +48,7 @@ func (c *Cipher) ID() string {
 	return id
 }
 
-// Type returns the cipher type (1=login, 2=note, 3=card, 4=identity).
+// Type returns the cipher type (1=login, 2=note, 3=card, 4=identity, 5=ssh key).
 func (c *Cipher) Type() int {
 	t, _ := c.data["type"].(float64)
 	return int(t)
@@ -60,35 +65,70 @@ func (c *Cipher) Name() string {
 	return c.decryptField("name")
 }
 
+// SetName sets the cipher's name, encrypting it instantly.
+func (c *Cipher) SetName(name string) error {
+	encStr, err := encryptIfNotEncrypted(name, c.key)
+	if err != nil {
+		return err
+	}
+	c.data["name"] = encStr
+	return nil
+}
+
 // Notes returns the decrypted notes field.
 func (c *Cipher) Notes() string {
 	return c.decryptField("notes")
 }
 
+// SetNotes sets the cipher's notes, encrypting it instantly.
+func (c *Cipher) SetNotes(notes string) error {
+	if notes == "" {
+		delete(c.data, "notes")
+		return nil
+	}
+	encStr, err := encryptIfNotEncrypted(notes, c.key)
+	if err != nil {
+		return err
+	}
+	c.data["notes"] = encStr
+	return nil
+}
+
 // GetField returns a field value from the cipher data by key.
-// Encrypted string fields are automatically decrypted.
 func (c *Cipher) GetField(name string) (any, error) {
 	val, ok := c.data[name]
 	if !ok {
 		return nil, fmt.Errorf("cipher: field %q not found", name)
 	}
 
-	// Try to decrypt if it looks like an EncString
 	if s, ok := val.(string); ok && c.key != nil {
-		enc, err := crypto.ParseEncString(s)
-		if err == nil && !enc.IsZero() {
-			decrypted, err := enc.Decrypt(c.key)
-			if err == nil {
-				return string(decrypted), nil
-			}
-		}
+		return c.decryptString(s), nil
 	}
 	return val, nil
 }
 
-// SetField sets a field value on the cipher data.
-func (c *Cipher) SetField(name string, value any) {
-	c.data[name] = value
+// SetField sets a field value, encrypting if it is a string.
+func (c *Cipher) SetField(name string, value any) error {
+	if s, ok := value.(string); ok && c.key != nil {
+		encStr, err := encryptIfNotEncrypted(s, c.key)
+		if err != nil {
+			return err
+		}
+		c.data[name] = encStr
+	} else {
+		c.data[name] = value
+	}
+	return nil
+}
+
+// getOrCreateLogin is a helper to get or create the login map.
+func (c *Cipher) getOrCreateLogin() map[string]any {
+	login, ok := c.data["login"].(map[string]any)
+	if !ok || login == nil {
+		login = make(map[string]any)
+		c.data["login"] = login
+	}
+	return login
 }
 
 // GetLogin returns the decrypted username and password for a login cipher.
@@ -99,31 +139,105 @@ func (c *Cipher) GetLogin() (username, password string, err error) {
 	}
 
 	if u, ok := login["username"].(string); ok {
-		if c.key != nil {
-			username = c.decryptString(u)
-		} else {
-			username = u
-		}
+		username = c.decryptString(u)
 	}
 	if p, ok := login["password"].(string); ok {
-		if c.key != nil {
-			password = c.decryptString(p)
-		} else {
-			password = p
-		}
+		password = c.decryptString(p)
 	}
 	return username, password, nil
 }
 
-// SetLogin sets the username and password on a login cipher (plaintext, encrypted on save).
-func (c *Cipher) SetLogin(username, password string) {
+// SetLoginUsername sets the username on a login cipher (encrypts immediately).
+func (c *Cipher) SetLoginUsername(username string) error {
+	login := c.getOrCreateLogin()
+	if username == "" {
+		delete(login, "username")
+		return nil
+	}
+	encStr, err := encryptIfNotEncrypted(username, c.key)
+	if err != nil {
+		return err
+	}
+	login["username"] = encStr
+	return nil
+}
+
+// SetLoginPassword sets the password on a login cipher (encrypts immediately).
+func (c *Cipher) SetLoginPassword(password string) error {
+	login := c.getOrCreateLogin()
+	if password == "" {
+		delete(login, "password")
+		return nil
+	}
+	encStr, err := encryptIfNotEncrypted(password, c.key)
+	if err != nil {
+		return err
+	}
+	login["password"] = encStr
+	return nil
+}
+
+// GetLoginURLs returns the decrypted URIs for a login cipher.
+func (c *Cipher) GetLoginURLs() ([]string, error) {
 	login, ok := c.data["login"].(map[string]any)
 	if !ok {
-		login = make(map[string]any)
-		c.data["login"] = login
+		return nil, fmt.Errorf("cipher: not a login type or no login data")
 	}
-	login["username"] = username
-	login["password"] = password
+	uris, ok := login["uris"].([]any)
+	if !ok {
+		return nil, nil // Not an error if there are no URLs
+	}
+	var res []string
+	for _, u := range uris {
+		if uriMap, ok := u.(map[string]any); ok {
+			if uriStr, ok := uriMap["uri"].(string); ok {
+				res = append(res, c.decryptString(uriStr))
+			}
+		}
+	}
+	return res, nil
+}
+
+// SetLoginURLs sets the URIs on a login cipher (encrypts immediately).
+func (c *Cipher) SetLoginURLs(urls []string) error {
+	login := c.getOrCreateLogin()
+	if len(urls) == 0 {
+		delete(login, "uris")
+		return nil
+	}
+	var uris []any
+	for _, u := range urls {
+		encStr, err := encryptIfNotEncrypted(u, c.key)
+		if err != nil {
+			return err
+		}
+		uris = append(uris, map[string]any{"uri": encStr, "match": nil})
+	}
+	login["uris"] = uris
+	return nil
+}
+
+// AddField appends a custom field to the cipher (encrypts immediately).
+func (c *Cipher) AddField(name, value string, fieldType int) error {
+	fields, ok := c.data["fields"].([]any)
+	if !ok || fields == nil {
+		fields = make([]any, 0)
+	}
+	encName, err := encryptIfNotEncrypted(name, c.key)
+	if err != nil {
+		return err
+	}
+	encVal, err := encryptIfNotEncrypted(value, c.key)
+	if err != nil {
+		return err
+	}
+	fields = append(fields, map[string]any{
+		"name":  encName,
+		"value": encVal,
+		"type":  fieldType, // 0 = Text, 1 = Hidden, 2 = Boolean
+	})
+	c.data["fields"] = fields
+	return nil
 }
 
 // Raw returns the underlying data map.
@@ -131,100 +245,76 @@ func (c *Cipher) Raw() map[string]any {
 	return c.data
 }
 
-// Encrypt produces an encrypted cipher map ready for the API.
+// Encrypt simply returns the underlying map, as all data is encrypted on the fly.
+// Retained for API compatibility.
 func (c *Cipher) Encrypt(key *crypto.SymmetricKey) (map[string]any, error) {
-	if key == nil {
-		return nil, fmt.Errorf("cipher: no encryption key")
+	// Everything is already encrypted using c.key
+	// If the key passed is different (e.g. org key), we would need to re-encrypt
+	if c.key != nil && key != nil && string(c.key.Bytes()) != string(key.Bytes()) {
+		// Needs complete re-encryption. Since we only have the map with the old key,
+		// we decrypt values using c.key and re-encrypt with the new key.
+		return reencryptData(c.data, c.key, key)
 	}
+	return c.data, nil
+}
 
+func reencryptData(data map[string]any, oldKey, newKey *crypto.SymmetricKey) (map[string]any, error) {
 	result := make(map[string]any)
-
-	// Copy all non-encrypted fields
-	for k, v := range c.data {
-		result[k] = v
-	}
-
-	// Encrypt name
-	if name, ok := c.data["name"].(string); ok {
-		encStr, err := encryptIfNotEncrypted(name, key)
-		if err != nil {
-			return nil, fmt.Errorf("cipher: encrypt name: %w", err)
-		}
-		result["name"] = encStr
-	}
-
-	// Encrypt notes
-	if notes, ok := c.data["notes"].(string); ok && notes != "" {
-		encStr, err := encryptIfNotEncrypted(notes, key)
-		if err != nil {
-			return nil, fmt.Errorf("cipher: encrypt notes: %w", err)
-		}
-		result["notes"] = encStr
-	}
-
-	// Encrypt login fields
-	if login, ok := c.data["login"].(map[string]any); ok {
-		encLogin := make(map[string]any)
-		for k, v := range login {
-			encLogin[k] = v
-		}
-		for _, field := range []string{"username", "password", "totp"} {
-			if val, ok := login[field].(string); ok && val != "" {
-				encStr, err := encryptIfNotEncrypted(val, key)
-				if err != nil {
-					return nil, fmt.Errorf("cipher: encrypt login.%s: %w", field, err)
-				}
-				encLogin[field] = encStr
-			}
-		}
-		// Encrypt URIs
-		if uris, ok := login["uris"].([]any); ok {
-			encURIs := make([]any, len(uris))
-			for i, u := range uris {
-				if uriMap, ok := u.(map[string]any); ok {
-					encURI := make(map[string]any)
-					for k, v := range uriMap {
-						encURI[k] = v
+	for k, v := range data {
+		switch tv := v.(type) {
+		case string:
+			// Attempt to decrypt and re-encrypt
+			enc, err := crypto.ParseEncString(tv)
+			if err == nil {
+				dec, err := enc.Decrypt(oldKey)
+				if err == nil {
+					newEnc, err := encryptIfNotEncrypted(string(dec), newKey)
+					if err != nil {
+						return nil, err
 					}
-					if uri, ok := uriMap["uri"].(string); ok && uri != "" {
-						encStr, err := encryptIfNotEncrypted(uri, key)
-						if err != nil {
-							return nil, fmt.Errorf("cipher: encrypt uri: %w", err)
+					result[k] = newEnc
+					continue
+				}
+			}
+			result[k] = v // leave as is if not our enc string
+		case map[string]any:
+			newMap, err := reencryptData(tv, oldKey, newKey)
+			if err != nil {
+				return nil, err
+			}
+			result[k] = newMap
+		case []any:
+			var newList []any
+			for _, item := range tv {
+				if mapItem, ok := item.(map[string]any); ok {
+					newMapItem, err := reencryptData(mapItem, oldKey, newKey)
+					if err != nil {
+						return nil, err
+					}
+					newList = append(newList, newMapItem)
+				} else if strItem, ok := item.(string); ok {
+					enc, err := crypto.ParseEncString(strItem)
+					if err == nil {
+						dec, err := enc.Decrypt(oldKey)
+						if err == nil {
+							newEnc, err := encryptIfNotEncrypted(string(dec), newKey)
+							if err != nil {
+								return nil, err
+							}
+							newList = append(newList, newEnc)
+							continue
 						}
-						encURI["uri"] = encStr
 					}
-					encURIs[i] = encURI
+					newList = append(newList, strItem)
+				} else {
+					newList = append(newList, item)
 				}
 			}
-			encLogin["uris"] = encURIs
+			result[k] = newList
+		default:
+			result[k] = v
 		}
-		result["login"] = encLogin
 	}
-
-	// Encrypt custom fields
-	if fields, ok := c.data["fields"].([]any); ok {
-		encFields := make([]any, len(fields))
-		for i, f := range fields {
-			if fMap, ok := f.(map[string]any); ok {
-				encField := make(map[string]any)
-				for k, v := range fMap {
-					encField[k] = v
-				}
-				for _, field := range []string{"name", "value"} {
-					if val, ok := fMap[field].(string); ok && val != "" {
-						encStr, err := encryptIfNotEncrypted(val, key)
-						if err != nil {
-							return nil, fmt.Errorf("cipher: encrypt field.%s: %w", field, err)
-						}
-						encField[field] = encStr
-					}
-				}
-				encFields[i] = encField
-			}
-		}
-		result["fields"] = encFields
-	}
-
 	return result, nil
 }
 
@@ -251,6 +341,9 @@ func (c *Cipher) decryptString(s string) string {
 func encryptIfNotEncrypted(val string, key *crypto.SymmetricKey) (string, error) {
 	if val == "" {
 		return "", nil
+	}
+	if key == nil {
+		return "", fmt.Errorf("cannot encrypt without a key")
 	}
 	_, err := crypto.ParseEncString(val)
 	if err == nil {

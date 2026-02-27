@@ -144,25 +144,32 @@ func cipherCmd() *cli.Command {
 			},
 			{
 				Name:  "create",
-				Usage: "Create a new login cipher",
+				Usage: "Create a new cipher",
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "name", Required: true, Usage: "Name of the cipher"},
+					&cli.IntFlag{Name: "type", Value: vault.CipherTypeLogin, Usage: "Type of cipher (1=Login, 2=Note, 3=Card, 4=Identity, 5=SshKey)"},
+					&cli.StringFlag{Name: "notes", Usage: "Notes for the cipher"},
 					&cli.StringFlag{Name: "username", Usage: "Login username"},
 					&cli.StringFlag{Name: "login-password", Usage: "Login password"},
+					&cli.StringSliceFlag{Name: "url", Usage: "Login URLs (can be specified multiple times)"},
+					&cli.StringSliceFlag{Name: "field", Usage: "Custom fields (format: Name=Value)"},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					actionCreate(vClient, cmd.String("name"), cmd.String("username"), cmd.String("login-password"))
+					actionCreate(vClient, cmd)
 					return nil
 				},
 			},
 			{
 				Name:  "update",
-				Usage: "Update a login cipher",
+				Usage: "Update a cipher",
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "id", Required: true, Usage: "Cipher ID"},
 					&cli.StringFlag{Name: "name", Usage: "Name of the cipher"},
-					&cli.StringFlag{Name: "username", Usage: "Login username"},
-					&cli.StringFlag{Name: "login-password", Usage: "Login password"},
+					&cli.StringFlag{Name: "notes", Usage: "Notes for the cipher"},
+					&cli.StringFlag{Name: "username", Usage: "Login username (updates independent of password)"},
+					&cli.StringFlag{Name: "login-password", Usage: "Login password (updates independent of username)"},
+					&cli.StringSliceFlag{Name: "url", Usage: "Login URLs (can be specified multiple times, replaces existing)"},
+					&cli.StringSliceFlag{Name: "field", Usage: "Custom fields to add (format: Name=Value)"},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					actionUpdate(vClient, cmd)
@@ -658,15 +665,44 @@ func actionGet(v *vault.Vault, id string) {
 			fmt.Printf("User: %s\n", u)
 			fmt.Printf("Pass: %s\n", p)
 		}
+		if urls, err := c.GetLoginURLs(); err == nil && len(urls) > 0 {
+			fmt.Printf("URLs: %s\n", strings.Join(urls, ", "))
+		}
 	}
+	if notes := c.Notes(); notes != "" {
+		fmt.Printf("Notes: %s\n", notes)
+	}
+
 }
 
-func actionCreate(v *vault.Vault, name, username, loginPassword string) {
-	c := vault.NewCipher(vault.CipherTypeLogin, name)
-	if username != "" || loginPassword != "" {
-		c.SetLogin(username, loginPassword)
+func actionCreate(v *vault.Vault, cmd *cli.Command) {
+	c, err := vault.NewCipher(cmd.Int("type"), cmd.String("name"), v.SymmetricKey())
+	exitOnErr(err)
+
+	if cmd.IsSet("notes") {
+		exitOnErr(c.SetNotes(cmd.String("notes")))
 	}
-	err := v.CreateCipher(c)
+
+	if cmd.IsSet("username") {
+		exitOnErr(c.SetLoginUsername(cmd.String("username")))
+	}
+	if cmd.IsSet("login-password") {
+		exitOnErr(c.SetLoginPassword(cmd.String("login-password")))
+	}
+	if cmd.IsSet("url") {
+		exitOnErr(c.SetLoginURLs(cmd.StringSlice("url")))
+	}
+
+	if cmd.IsSet("field") {
+		for _, field := range cmd.StringSlice("field") {
+			parts := strings.SplitN(field, "=", 2)
+			if len(parts) == 2 {
+				exitOnErr(c.AddField(parts[0], parts[1], 0))
+			}
+		}
+	}
+
+	err = v.CreateCipher(c)
 	exitOnErr(err)
 	fmt.Printf("Created cipher: %s\n", c.ID())
 }
@@ -677,18 +713,30 @@ func actionUpdate(v *vault.Vault, cmd *cli.Command) {
 	exitOnErr(err)
 
 	if cmd.IsSet("name") {
-		c.SetField("name", cmd.String("name"))
+		exitOnErr(c.SetName(cmd.String("name")))
 	}
 
-	if cmd.IsSet("username") || cmd.IsSet("login-password") {
-		u, p, _ := c.GetLogin()
-		if cmd.IsSet("username") {
-			u = cmd.String("username")
+	if cmd.IsSet("notes") {
+		exitOnErr(c.SetNotes(cmd.String("notes")))
+	}
+
+	if cmd.IsSet("username") {
+		exitOnErr(c.SetLoginUsername(cmd.String("username")))
+	}
+	if cmd.IsSet("login-password") {
+		exitOnErr(c.SetLoginPassword(cmd.String("login-password")))
+	}
+	if cmd.IsSet("url") {
+		exitOnErr(c.SetLoginURLs(cmd.StringSlice("url")))
+	}
+
+	if cmd.IsSet("field") {
+		for _, field := range cmd.StringSlice("field") {
+			parts := strings.SplitN(field, "=", 2)
+			if len(parts) == 2 {
+				exitOnErr(c.AddField(parts[0], parts[1], 0))
+			}
 		}
-		if cmd.IsSet("login-password") {
-			p = cmd.String("login-password")
-		}
-		c.SetLogin(u, p)
 	}
 
 	err = v.UpdateCipher(c)
@@ -1033,6 +1081,8 @@ func cipherTypeName(typ int) string {
 		return "Card"
 	case vault.CipherTypeIdentity:
 		return "Identity"
+	case vault.CipherTypeSshKey:
+		return "SshKey"
 	}
 	return "Unknown"
 }
