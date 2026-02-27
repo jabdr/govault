@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 )
 
@@ -80,6 +82,50 @@ func (c *Client) CreateSend(req *SendRequest) (*SendResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: create send: %w", err)
 	}
+	return &resp, nil
+}
+
+// CreateFileSend creates the metadata for a new file Send.
+func (c *Client) CreateFileSend(req *SendRequest) (*SendResponse, error) {
+	c.logger.Info("creating file send metadata")
+	var wrapper struct {
+		SendResponse SendResponse `json:"sendResponse"`
+	}
+	err := c.doRequest(http.MethodPost, "/api/sends/file/v2", req, &wrapper)
+	if err != nil {
+		return nil, fmt.Errorf("api: create file send metadata: %w", err)
+	}
+	return &wrapper.SendResponse, nil
+}
+
+// UploadSendFile uploads the actual encrypted file data for a Send.
+func (c *Client) UploadSendFile(sendID string, fileID string, fileName string, data []byte) (*SendResponse, error) {
+	c.logger.Info("uploading send file", "send_id", sendID, "file_id", fileID)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	// Create a form file for "data" with actual filename sent beforehand
+	part, err := writer.CreateFormFile("data", fileName)
+	if err != nil {
+		return nil, fmt.Errorf("api: form file: %w", err)
+	}
+
+	if _, err := part.Write(data); err != nil {
+		return nil, fmt.Errorf("api: write data: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("api: close writer: %w", err)
+	}
+
+	var resp SendResponse
+	path := fmt.Sprintf("/api/sends/%s/file/%s", sendID, fileID)
+	err = c.doRequestRaw(http.MethodPost, path, writer.FormDataContentType(), &body, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("api: upload file send: %w", err)
+	}
+
 	return &resp, nil
 }
 

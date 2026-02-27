@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/playwright-community/playwright-go"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,11 +29,28 @@ func TestPlaywrightCreateSendUIAndDumpURL(t *testing.T) {
 
 	page.Locator("a[href*='/sends']").First().Click()
 
-	page.Locator("button[aria-label='New'], #newItemDropdown").First().Click()
+	err = page.Locator("button:has-text('New Send'), #newItemDropdown, button[aria-label='New']").First().WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(5000),
+	})
+	if err != nil {
+		html, _ := page.Content()
+		t.Logf("NEW BUTTON NOT FOUND. HTML:\n%s", html)
+		t.FailNow()
+	}
+	page.Locator("button:has-text('New Send'), #newItemDropdown, button[aria-label='New']").First().Click()
+
+	// Wait for the dropdown menu entry to be visible and click it
+	page.Locator("a:has-text('Text')").First().Click()
 
 	nameInput := page.Locator("input[formcontrolname='name'], input[aria-label*='Name'], input[name='Name']").First()
-	err = nameInput.WaitFor()
-	require.NoError(t, err)
+	err = nameInput.WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(5000),
+	})
+	if err != nil {
+		html, _ := page.Content()
+		t.Logf("NAME INPUT NOT FOUND. HTML:\n%s", html)
+		require.NoError(t, err)
+	}
 
 	nameInput.Fill("My Send URL")
 

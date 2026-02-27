@@ -119,6 +119,79 @@ func TestSendLifecycle(t *testing.T) {
 	t.Log("Send lifecycle complete")
 }
 
+func TestFileSendLifecycle(t *testing.T) {
+	email := "test-send-file@example.com"
+	password := "test-password-123"
+
+	RegisterTestUser(t, testServer, email, password)
+
+	v := APILogin(t, testServer, email, password)
+
+	fileContent := []byte("My super secret file data")
+
+	// Create
+	send, accessURL, err := v.CreateFileSend("Test File Send", "secret.txt", fileContent, vault.SendOptions{})
+	require.NoError(t, err, "CreateFileSend")
+	t.Logf("Created file send: %s, URL: %s", send.ID, accessURL)
+
+	// List
+	sends, err := v.ListSends()
+	require.NoError(t, err, "ListSends")
+	found := false
+	for _, s := range sends {
+		if s.ID == send.ID {
+			found = true
+			assert.Equal(t, "Test File Send", s.Name)
+			assert.Equal(t, "secret.txt", s.FileName)
+			break
+		}
+	}
+	assert.True(t, found, "Created file send not found in list")
+
+	// Browser check: actually download the file
+	if os.Getenv("SKIP_BROWSER_TESTS") != "1" {
+		t.Log("Verifying send file download via browser")
+		_, _, page := SetupPlaywright(t)
+
+		_, err = page.Goto(accessURL)
+		require.NoError(t, err)
+
+		btn := page.Locator("button:has-text('Download file'), a:has-text('Download file')")
+		err = btn.First().WaitFor(playwright.LocatorWaitForOptions{
+			Timeout: playwright.Float(5000),
+		})
+		if err != nil {
+			// fall back if there's just a general download button
+			btn = page.Locator("button:has-text('Download'), button[aria-label='Download']")
+			err = btn.First().WaitFor()
+			require.NoError(t, err, "Failed to find download button")
+		}
+
+		time.Sleep(1 * time.Second) // let angular settle
+
+		download, err := page.ExpectDownload(func() error {
+			return btn.First().Click()
+		})
+		require.NoError(t, err, "Failed to initiate download")
+
+		path, err := download.Path()
+		require.NoError(t, err, "Failed to get download path")
+
+		data, err := os.ReadFile(path)
+		require.NoError(t, err, "Failed to read downloaded file")
+		require.Equal(t, "My super secret file data", string(data), "Decrypted file content must match")
+
+		t.Log("Send accessed and downloaded successfully in UI")
+
+		_ = page.Context().Close()
+	}
+
+	// Delete
+	err = v.DeleteSend(send.ID)
+	require.NoError(t, err, "DeleteSend")
+	t.Log("Send file lifecycle complete")
+}
+
 func TestEmergencyAccessLifecycle(t *testing.T) {
 	email := "test-ea-grantor@example.com"
 	password := "test-password-123"

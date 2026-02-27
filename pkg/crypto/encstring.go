@@ -123,3 +123,37 @@ func EncryptToEncString(plaintext []byte, key *SymmetricKey) (EncString, error) 
 func (e EncString) IsZero() bool {
 	return e.Type == 0 && len(e.CT) == 0
 }
+
+// ToBytes packs the EncString into Bitwarden's binary format.
+// Format for type 2: Type (1 byte) + IV (16) + MAC (32) + CT
+func (e EncString) ToBytes() []byte {
+	if e.Type != 2 {
+		return nil
+	}
+	buf := make([]byte, 1+len(e.IV)+len(e.MAC)+len(e.CT))
+	buf[0] = byte(e.Type)
+	copy(buf[1:], e.IV)
+	copy(buf[1+len(e.IV):], e.MAC)
+	copy(buf[1+len(e.IV)+len(e.MAC):], e.CT)
+	return buf
+}
+
+// ParseEncBytes parses a Bitwarden encrypted string from its binary format.
+func ParseEncBytes(data []byte) (EncString, error) {
+	if len(data) < 1 {
+		return EncString{}, fmt.Errorf("crypto: empty binary encrypted string")
+	}
+	if data[0] == 2 {
+		if len(data) < 1+16+32 {
+			return EncString{}, fmt.Errorf("crypto: binary data too short for type 2")
+		}
+		iv := make([]byte, 16)
+		copy(iv, data[1:17])
+		mac := make([]byte, 32)
+		copy(mac, data[17:49])
+		ct := make([]byte, len(data)-49)
+		copy(ct, data[49:])
+		return EncString{Type: 2, IV: iv, MAC: mac, CT: ct}, nil
+	}
+	return EncString{}, fmt.Errorf("crypto: unsupported binary type %d", data[0])
+}
