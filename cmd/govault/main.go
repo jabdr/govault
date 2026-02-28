@@ -150,7 +150,7 @@ func cipherCmd() *cli.Command {
 					&cli.StringFlag{Name: "name", Required: true, Usage: "Name of the cipher"},
 					&cli.IntFlag{Name: "type", Value: vault.CipherTypeLogin, Usage: "Type of cipher (1=Login, 2=Note, 3=Card, 4=Identity, 5=SshKey)"},
 					&cli.StringFlag{Name: "notes", Usage: "Notes for the cipher"},
-					&cli.StringFlag{Name: "username", Usage: "Login username"},
+					&cli.StringFlag{Name: "login-username", Usage: "Login username"},
 					&cli.StringFlag{Name: "login-password", Usage: "Login password"},
 					&cli.StringSliceFlag{Name: "url", Usage: "Login URLs (can be specified multiple times)"},
 					&cli.StringSliceFlag{Name: "field", Usage: "Custom fields (format: Name=Value)"},
@@ -167,7 +167,7 @@ func cipherCmd() *cli.Command {
 					&cli.StringFlag{Name: "id", Required: true, Usage: "Cipher ID"},
 					&cli.StringFlag{Name: "name", Usage: "Name of the cipher"},
 					&cli.StringFlag{Name: "notes", Usage: "Notes for the cipher"},
-					&cli.StringFlag{Name: "username", Usage: "Login username (updates independent of password)"},
+					&cli.StringFlag{Name: "login-username", Usage: "Login username (updates independent of password)"},
 					&cli.StringFlag{Name: "login-password", Usage: "Login password (updates independent of username)"},
 					&cli.StringSliceFlag{Name: "url", Usage: "Login URLs (can be specified multiple times, replaces existing)"},
 					&cli.StringSliceFlag{Name: "field", Usage: "Custom fields to add (format: Name=Value)"},
@@ -684,8 +684,8 @@ func actionCreate(v *vault.Vault, cmd *cli.Command) {
 		exitOnErr(c.SetNotes(cmd.String("notes")))
 	}
 
-	if cmd.IsSet("username") {
-		exitOnErr(c.SetLoginUsername(cmd.String("username")))
+	if cmd.IsSet("login-username") {
+		exitOnErr(c.SetLoginUsername(cmd.String("login-username")))
 	}
 	if cmd.IsSet("login-password") {
 		exitOnErr(c.SetLoginPassword(cmd.String("login-password")))
@@ -721,8 +721,8 @@ func actionUpdate(v *vault.Vault, cmd *cli.Command) {
 		exitOnErr(c.SetNotes(cmd.String("notes")))
 	}
 
-	if cmd.IsSet("username") {
-		exitOnErr(c.SetLoginUsername(cmd.String("username")))
+	if cmd.IsSet("login-username") {
+		exitOnErr(c.SetLoginUsername(cmd.String("login-username")))
 	}
 	if cmd.IsSet("login-password") {
 		exitOnErr(c.SetLoginPassword(cmd.String("login-password")))
