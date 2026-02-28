@@ -81,8 +81,15 @@ func main() {
 			}
 			logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
 
+			// Skip login for 'register' and 'help' commands
+			for _, arg := range os.Args {
+				if arg == "register" || arg == "help" || arg == "-h" || arg == "--help" {
+					return ctx, nil
+				}
+			}
+
 			if server == "" || email == "" || password == "" {
-				return ctx, fmt.Errorf("server, email, and password are required")
+				return ctx, fmt.Errorf("server, email, and password are required for this command")
 			}
 
 			var err error
@@ -106,6 +113,7 @@ func main() {
 			folderCmd(),
 			sendCmd(),
 			emergencyCmd(),
+			registerCmd(),
 		},
 	}
 
@@ -1082,6 +1090,34 @@ func actionEmergencyTakeover(v *vault.Vault, id, newPassword string) {
 	err := v.TakeoverEmergencyAccess(id, newPassword)
 	exitOnErr(err)
 	fmt.Printf("Emergency takeover successful for %s. New master password is set.\n", id)
+}
+
+// -----------------------------------------------------------------------------
+// Register Command
+// -----------------------------------------------------------------------------
+
+func registerCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "register",
+		Usage: "Self-register a new account on the server",
+		Flags: []cli.Flag{
+			&cli.IntFlag{Name: "kdf", Value: 0, Usage: "KDF algorithm (0=PBKDF2, 1=Argon2id)"},
+			&cli.IntFlag{Name: "kdf-iterations", Value: 600000, Usage: "KDF iterations (PBKDF2) or Argon2 memory iterations"},
+			&cli.IntFlag{Name: "kdf-memory", Value: 64, Usage: "KDF memory in MB (Argon2id only)"},
+			&cli.IntFlag{Name: "kdf-parallelism", Value: 4, Usage: "KDF parallelism (Argon2id only)"},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if server == "" || email == "" || password == "" {
+				return fmt.Errorf("server, email, and password are required")
+			}
+			err := vault.Register(server, email, password, int(cmd.Int("kdf")), int(cmd.Int("kdf-iterations")), int(cmd.Int("kdf-memory")), int(cmd.Int("kdf-parallelism")), insecureSkipVerify, logger)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Account %s successfully registered\n", email)
+			return nil
+		},
+	}
 }
 
 func cipherTypeName(typ int) string {

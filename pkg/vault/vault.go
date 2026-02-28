@@ -5,6 +5,7 @@
 package vault
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -97,6 +98,85 @@ func LoginAPIKey(serverURL, clientID, clientSecret, email, password string, inse
 	}
 
 	return newVault(client, email, masterKey, passwordHash, syncData.Profile.Key, syncData.Profile.PrivateKey, syncData, logger)
+}
+
+// Register self-registers a new account on the server.
+func Register(serverURL, email, password string, kdf, iterations, memory, parallelism int, insecure bool, logger *slog.Logger) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	client := api.NewClient(serverURL, logger)
+	client.SetInsecureSkipVerify(insecure)
+	email = strings.ToLower(strings.TrimSpace(email))
+
+	// 1. Derive Master Key
+	masterKey, err := crypto.DeriveKey(
+		[]byte(password), []byte(email),
+		kdf, iterations, &memory, &parallelism,
+	)
+	if err != nil {
+		return fmt.Errorf("vault: derive master key: %w", err)
+	}
+
+	// 2. Derive Master Password Hash for login
+	masterPasswordHash := crypto.HashPassword(password, masterKey)
+
+	// 3. Derive Stretched Master Key (used to encrypt the symmetric user key)
+	stretched, err := crypto.StretchKey(masterKey)
+	if err != nil {
+		return fmt.Errorf("vault: stretch key: %w", err)
+	}
+	stretchedKey, err := crypto.MakeSymmetricKey(stretched)
+	if err != nil {
+		return fmt.Errorf("vault: make stretched symmetric key: %w", err)
+	}
+
+	// 4. Generate random user encryption key (the actual key for vault items)
+	userKey, err := crypto.GenerateSymmetricKey()
+	if err != nil {
+		return fmt.Errorf("vault: generate user key: %w", err)
+	}
+
+	// 5. Encrypt user key with stretched master key (Protected Symmetric Key)
+	protectedKey, err := crypto.EncryptToEncString(userKey.Bytes(), stretchedKey)
+	if err != nil {
+		return fmt.Errorf("vault: encrypt user key: %w", err)
+	}
+
+	// 6. Generate RSA key pair for organization sharing / emergency access
+	pubDER, privDER, err := crypto.GenerateRSAKeyPair()
+	if err != nil {
+		return fmt.Errorf("vault: generate RSA key pair: %w", err)
+	}
+
+	// 7. Encrypt the RSA private key with the user key
+	encPrivKey, err := crypto.EncryptToEncString(privDER, userKey)
+	if err != nil {
+		return fmt.Errorf("vault: encrypt RSA private key: %w", err)
+	}
+
+	// 8. Call API to register
+	req := &api.RegisterRequest{
+		Email:              email,
+		MasterPasswordHash: masterPasswordHash,
+		Key:                protectedKey.String(),
+		Keys: &api.UserKeyData{
+			EncryptedPrivateKey: encPrivKey.String(),
+			PublicKey:           base64.StdEncoding.EncodeToString(pubDER),
+		},
+		Kdf:            kdf,
+		KdfIterations:  iterations,
+		KdfMemory:      memory,
+		KdfParallelism: parallelism,
+	}
+
+	if err := client.Register(req); err != nil {
+		return fmt.Errorf("vault: register api call: %w", err)
+	}
+
+	logger.Info("registration successful", "email", email)
+	return nil
 }
 
 // deriveKeys performs PBKDF2 to derive the user's master key and login password hash.

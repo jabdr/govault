@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jabdr/govault/pkg/crypto"
 	"github.com/jabdr/govault/pkg/vault"
 )
 
@@ -249,4 +250,33 @@ func TestAPIKeyLogin(t *testing.T) {
 	fetched, err := v2.GetCipher(c.ID())
 	require.NoError(t, err, "GetCipher with API key login")
 	assert.Equal(t, "Integration Test Login API Key", fetched.Name(), "Name mismatch")
+}
+
+func TestSelfRegistration(t *testing.T) {
+	// Generate a unique email to avoid "already exists" errors
+	email := fmt.Sprintf("test-reg-%d@example.com", time.Now().UnixNano())
+	password := "test-password-123"
+
+	t.Logf("Testing self-registration for %s", email)
+
+	// 1. Register the new user using the new vault.Register function
+	err := vault.Register(
+		testServer,
+		email,
+		password,
+		crypto.KdfTypePBKDF2,
+		600000,
+		64,   // memory (Argon2 only)
+		4,    // parallelism (Argon2 only)
+		true, // insecureSkipVerify
+		GetTestLogger(),
+	)
+	require.NoError(t, err, "vault.Register should succeed")
+
+	// 2. Verify registration by logging in
+	v, err := vault.Login(testServer, email, password, true, GetTestLogger())
+	require.NoError(t, err, "Login after registration should succeed")
+	require.NotNil(t, v, "Vault client should not be nil")
+
+	t.Logf("Registration and login verified for %s", email)
 }

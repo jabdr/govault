@@ -17,6 +17,25 @@ type ChangePasswordRequest struct {
 	KdfParallelism        int    `json:"kdfParallelism,omitempty"`
 }
 
+// UserKeyData holds the user RSA key pair.
+type UserKeyData struct {
+	EncryptedPrivateKey string `json:"encryptedPrivateKey"`
+	PublicKey           string `json:"publicKey"`
+}
+
+// RegisterRequest is the request body for POST /api/accounts.
+type RegisterRequest struct {
+	Email              string       `json:"email"`
+	MasterPasswordHash string       `json:"masterPasswordHash"`
+	MasterPasswordHint string       `json:"masterPasswordHint,omitempty"`
+	Key                string       `json:"key"`
+	Keys               *UserKeyData `json:"keys,omitempty"`
+	Kdf                int          `json:"kdf"`
+	KdfIterations      int          `json:"kdfIterations"`
+	KdfMemory          int          `json:"kdfMemory,omitempty"`
+	KdfParallelism     int          `json:"kdfParallelism,omitempty"`
+}
+
 // ChangePassword changes the master password and re-encrypted symmetric key.
 func (c *Client) ChangePassword(req *ChangePasswordRequest) error {
 	c.logger.Info("changing password")
@@ -94,6 +113,16 @@ func (c *Client) VerifyEmailToken(userID, token string) error {
 	}
 	if err := c.doRequest(http.MethodPost, "/api/accounts/verify-email-token", req, nil); err != nil {
 		return fmt.Errorf("api: verify email token: %w", err)
+	}
+	return nil
+}
+
+// Register creates a new account.
+func (c *Client) Register(req *RegisterRequest) error {
+	c.logger.Info("registering new account", "email", req.Email)
+	err := c.doRequest(http.MethodPost, "/identity/accounts/register", req, nil)
+	if err != nil {
+		return fmt.Errorf("api: register: %w", err)
 	}
 	return nil
 }

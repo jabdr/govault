@@ -3,10 +3,8 @@
 package tests
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -158,74 +156,31 @@ func GetTestLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
-// RegisterTestUser creates a new test user via the web API.
+// RegisterTestUser creates a new test user via the vault.Register function.
 func RegisterTestUser(t *testing.T, serverURL, email, password string) {
 	t.Helper()
-	logger := GetTestLogger()
-
-	masterKey, err := crypto.DeriveKey([]byte(password), []byte(email), crypto.KdfTypePBKDF2, 600000, nil, nil)
-	require.NoError(t, err, "derive key")
-
-	stretched, err := crypto.StretchKey(masterKey)
-	require.NoError(t, err, "stretch key")
-
-	symKey, err := crypto.GenerateSymmetricKey()
-	require.NoError(t, err, "generate symmetric key")
-
-	stretchedKey, err := crypto.MakeSymmetricKey(stretched)
-	require.NoError(t, err, "make stretched key")
-
-	protectedKey, err := crypto.EncryptToEncString(symKey.Bytes(), stretchedKey)
-	require.NoError(t, err, "encrypt symmetric key")
-
-	pubDER, privDER, err := crypto.GenerateRSAKeyPair()
-	require.NoError(t, err, "generate RSA key pair")
-
-	encPrivKey, err := crypto.EncryptToEncString(privDER, symKey)
-	require.NoError(t, err, "encrypt private key")
-
-	passwordHash := crypto.HashPassword(password, masterKey)
-
-	_ = logger
-	type registerRequest struct {
-		Name               string `json:"name"`
-		Email              string `json:"email"`
-		MasterPasswordHash string `json:"masterPasswordHash"`
-		MasterPasswordHint string `json:"masterPasswordHint"`
-		Key                string `json:"key"`
-		Kdf                int    `json:"kdf"`
-		KdfIterations      int    `json:"kdfIterations"`
-		Keys               struct {
-			PublicKey           string `json:"publicKey"`
-			EncryptedPrivateKey string `json:"encryptedPrivateKey"`
-		} `json:"keys"`
+	err := vault.Register(
+		serverURL,
+		email,
+		password,
+		crypto.KdfTypePBKDF2,
+		600000,
+		64,
+		4,
+		true, // insecure
+		GetTestLogger(),
+	)
+	if err != nil {
+		// If user already exists, Vaultwarden might return an error, but for tests we often don't care
+		// However, we should check if it's a real failure.
+		if strings.Contains(err.Error(), "already") {
+			t.Logf("user %s already exists", email)
+			return
+		}
+		require.NoError(t, err, "register test user")
 	}
 
-	reqBody := registerRequest{
-		Name:               email,
-		Email:              email,
-		MasterPasswordHash: passwordHash,
-		MasterPasswordHint: "",
-		Key:                protectedKey.String(),
-		Kdf:                0, // PBKDF2
-		KdfIterations:      600000,
-	}
-	reqBody.Keys.PublicKey = base64.StdEncoding.EncodeToString(pubDER)
-	reqBody.Keys.EncryptedPrivateKey = encPrivKey.String()
-
-	jsonData, err := json.Marshal(reqBody)
-	require.NoError(t, err, "marshal request")
-
-	resp, err := http.Post(serverURL+"/identity/accounts/register", "application/json", bytes.NewReader(jsonData))
-	require.NoError(t, err, "post register")
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		require.Contains(t, string(body), "already", "register failed: %d %s", resp.StatusCode, string(body))
-	}
-
-	t.Logf("registered user (or already existed): %s", email)
+	t.Logf("registered user: %s", email)
 }
 
 // APILogin logs in and returns a configured Vault client.
