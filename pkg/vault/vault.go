@@ -461,3 +461,76 @@ func (v *Vault) GetAPIKey() (string, string, error) {
 	clientID := "user." + v.syncData.Profile.ID
 	return clientID, secret, nil
 }
+
+// ChangeName updates the account display name.
+func (v *Vault) ChangeName(name string) error {
+	err := v.client.UpdateProfile(&api.UpdateProfileRequest{
+		Name: name,
+	})
+	if err != nil {
+		return fmt.Errorf("vault: change name: %w", err)
+	}
+	v.logger.Info("name changed successfully", "name", name)
+	return nil
+}
+
+// RequestEmailChange initiates the email change process by requesting a
+// verification token to be sent to the new email address.
+func (v *Vault) RequestEmailChange(newEmail string) error {
+	err := v.client.RequestEmailChange(&api.RequestEmailChangeRequest{
+		NewEmail:           strings.ToLower(newEmail),
+		MasterPasswordHash: v.passwordHash,
+	})
+	if err != nil {
+		return fmt.Errorf("vault: request email change: %w", err)
+	}
+	v.logger.Info("email change token requested", "newEmail", newEmail)
+	return nil
+}
+
+// ChangeEmail changes the account email address.
+// The token parameter is the verification token sent to the new email.
+// This re-derives the master key with the new email as salt, re-encrypts
+// the protected symmetric key, and submits the change to the server.
+func (v *Vault) ChangeEmail(newEmail, masterPassword, token string, kdf, kdfIter, kdfMem, kdfParal int) error {
+	// Derive new master key using the new email as salt
+	newMasterKey, err := crypto.DeriveKey([]byte(masterPassword), []byte(strings.ToLower(newEmail)), kdf, kdfIter, &kdfMem, &kdfParal)
+	if err != nil {
+		return fmt.Errorf("vault: derive new master key: %w", err)
+	}
+
+	newStretched, err := crypto.StretchKey(newMasterKey)
+	if err != nil {
+		return fmt.Errorf("vault: stretch new key: %w", err)
+	}
+
+	// Re-encrypt symmetric key with new stretched key
+	stretchedKey, err := crypto.MakeSymmetricKey(newStretched)
+	if err != nil {
+		return fmt.Errorf("vault: make stretched key: %w", err)
+	}
+
+	newProtectedKey, err := crypto.EncryptToEncString(v.symKey.Bytes(), stretchedKey)
+	if err != nil {
+		return fmt.Errorf("vault: encrypt symmetric key: %w", err)
+	}
+
+	newPasswordHash := crypto.HashPassword(masterPassword, newMasterKey)
+
+	err = v.client.ChangeEmail(&api.ChangeEmailRequest{
+		NewEmail:              strings.ToLower(newEmail),
+		MasterPasswordHash:    v.passwordHash,
+		NewMasterPasswordHash: newPasswordHash,
+		Token:                 token,
+		Key:                   newProtectedKey.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("vault: change email: %w", err)
+	}
+
+	v.email = strings.ToLower(newEmail)
+	v.masterKey = newMasterKey
+	v.passwordHash = newPasswordHash
+	v.logger.Info("email changed successfully", "email", v.email)
+	return nil
+}

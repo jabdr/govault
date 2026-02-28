@@ -126,3 +126,54 @@ func (c *Client) Register(req *RegisterRequest) error {
 	}
 	return nil
 }
+
+// UpdateProfileRequest is the request body for PUT /api/accounts/profile.
+type UpdateProfileRequest struct {
+	Name               string `json:"name"`
+	MasterPasswordHint string `json:"masterPasswordHint"`
+}
+
+// UpdateProfile updates the account profile (name, hint).
+func (c *Client) UpdateProfile(req *UpdateProfileRequest) error {
+	c.logger.Info("updating profile", "name", req.Name)
+	err := c.doRequest(http.MethodPut, "/api/accounts/profile", req, nil)
+	if err != nil {
+		return fmt.Errorf("api: update profile: %w", err)
+	}
+	return nil
+}
+
+// RequestEmailChangeRequest is the request body for POST /api/accounts/email-token.
+type RequestEmailChangeRequest struct {
+	NewEmail           string `json:"newEmail"`
+	MasterPasswordHash string `json:"masterPasswordHash"`
+}
+
+// RequestEmailChange initiates an email change by requesting a verification token.
+func (c *Client) RequestEmailChange(req *RequestEmailChangeRequest) error {
+	c.logger.Info("requesting email change token", "newEmail", req.NewEmail)
+	err := c.doRequest(http.MethodPost, "/api/accounts/email-token", req, nil)
+	if err != nil {
+		return fmt.Errorf("api: request email change: %w", err)
+	}
+	return nil
+}
+
+// ChangeEmailRequest is the request body for POST /api/accounts/email.
+type ChangeEmailRequest struct {
+	NewEmail              string `json:"newEmail"`
+	MasterPasswordHash    string `json:"masterPasswordHash"`
+	NewMasterPasswordHash string `json:"newMasterPasswordHash"`
+	Token                 string `json:"token"`
+	Key                   string `json:"key"`
+}
+
+// ChangeEmail changes the account email address.
+func (c *Client) ChangeEmail(req *ChangeEmailRequest) error {
+	c.logger.Info("changing email", "newEmail", req.NewEmail)
+	err := c.doRequest(http.MethodPost, "/api/accounts/email", req, nil)
+	if err != nil {
+		return fmt.Errorf("api: change email: %w", err)
+	}
+	return nil
+}

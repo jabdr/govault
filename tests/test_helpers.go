@@ -332,3 +332,98 @@ func VerifyUserEmail(t *testing.T, v *vault.Vault, email string) {
 	err = v.Client().VerifyEmailToken(userID, token)
 	require.NoError(t, err, "complete verify email token")
 }
+
+// GetEmailChangeToken requests an email change and retrieves the verification
+// token from Mailpit. The token is sent to the new email address.
+func GetEmailChangeToken(t *testing.T, v *vault.Vault, newEmail string) string {
+	t.Helper()
+
+	// Request the email change token
+	err := v.RequestEmailChange(newEmail)
+	require.NoError(t, err, "request email change token")
+
+	// Poll Mailpit for the token email
+	var token string
+	for i := 0; i < 10; i++ {
+		resp, err := http.Get(globalMailpitAPI)
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		var data struct {
+			Messages []struct {
+				ID string `json:"ID"`
+				To []struct {
+					Address string `json:"Address"`
+				} `json:"To"`
+				Subject string `json:"Subject"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(body, &data); err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		for _, msg := range data.Messages {
+			for _, to := range msg.To {
+				if to.Address == newEmail {
+					t.Logf("Found email to %s: subject=%q id=%s", newEmail, msg.Subject, msg.ID)
+					fullMsgURL := strings.Replace(globalMailpitAPI, "/messages", "/message/"+msg.ID, 1)
+					msgResp, err := http.Get(fullMsgURL)
+					if err != nil {
+						continue
+					}
+					msgBody, _ := io.ReadAll(msgResp.Body)
+					msgResp.Body.Close()
+
+					var fullMsg struct {
+						Text string `json:"Text"`
+						HTML string `json:"HTML"`
+					}
+					_ = json.Unmarshal(msgBody, &fullMsg)
+
+					bodyStr := fullMsg.Text
+					if bodyStr == "" {
+						bodyStr = fullMsg.HTML
+					}
+					t.Logf("Email body (first 500 chars): %.500s", bodyStr)
+
+					// Vaultwarden sends a 6-digit code like "code in web vault: 803147"
+					if idx := strings.Index(bodyStr, "code in web vault: "); idx != -1 {
+						codeStr := bodyStr[idx+len("code in web vault: "):]
+						endIdx := strings.IndexAny(codeStr, "\r\n <")
+						if endIdx != -1 {
+							codeStr = codeStr[:endIdx]
+						}
+						token = strings.TrimSpace(codeStr)
+					}
+					// Fallback: try token= URL parameter
+					if token == "" {
+						if idx := strings.Index(bodyStr, "token="); idx != -1 {
+							tokenStr := bodyStr[idx+6:]
+							endIdx := strings.IndexAny(tokenStr, "&\"\r\n <")
+							if endIdx != -1 {
+								tokenStr = tokenStr[:endIdx]
+							}
+							token = tokenStr
+						}
+					}
+					break
+				}
+			}
+			if token != "" {
+				break
+			}
+		}
+		if token != "" {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	require.NotEmpty(t, token, "failed to extract token from email change email")
+	return token
+}

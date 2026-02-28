@@ -280,3 +280,53 @@ func TestSelfRegistration(t *testing.T) {
 
 	t.Logf("Registration and login verified for %s", email)
 }
+
+func TestChangeEmail(t *testing.T) {
+	oldEmail := fmt.Sprintf("test-chgemail-%d@example.com", time.Now().UnixNano())
+	newEmail := fmt.Sprintf("test-newemail-%d@example.com", time.Now().UnixNano())
+	password := "test-password-123"
+
+	// 1. Register and login
+	RegisterTestUser(t, testServer, oldEmail, password)
+	v := APILogin(t, testServer, oldEmail, password)
+
+	// 2. Create a cipher before the email change so we can verify data survives
+	c, err := vault.NewCipher(vault.CipherTypeLogin, "Pre-Email-Change Cipher", v.SymmetricKey())
+	require.NoError(t, err, "NewCipher")
+	require.NoError(t, c.SetLoginUsername("myuser"), "SetLoginUsername")
+	require.NoError(t, c.SetLoginPassword("mypass"), "SetLoginPassword")
+	err = v.CreateCipher(c)
+	require.NoError(t, err, "CreateCipher before email change")
+	cipherID := c.ID()
+	t.Logf("Created cipher %s before email change", cipherID)
+
+	// 3. Request email change token (sent to new email via Mailpit)
+	token := GetEmailChangeToken(t, v, newEmail)
+	t.Logf("Got email change token: %s", token)
+
+	// 4. Change email with the token
+	err = v.ChangeEmail(newEmail, password, token, crypto.KdfTypePBKDF2, 600000, 64, 4)
+	require.NoError(t, err, "ChangeEmail should succeed")
+	t.Logf("Changed email from %s to %s", oldEmail, newEmail)
+
+	// 5. Verify old email can no longer login
+	_, err = vault.Login(testServer, oldEmail, password, true, GetTestLogger())
+	require.Error(t, err, "Login with old email should fail after email change")
+	t.Log("Confirmed old email login fails")
+
+	// 6. Verify new email can login
+	v2, err := vault.Login(testServer, newEmail, password, true, GetTestLogger())
+	require.NoError(t, err, "Login with new email should succeed")
+	require.NotNil(t, v2, "Vault client should not be nil")
+	t.Log("Confirmed new email login succeeds")
+
+	// 7. Verify the cipher data survived the email change
+	fetched, err := v2.GetCipher(cipherID)
+	require.NoError(t, err, "GetCipher after email change")
+	assert.Equal(t, "Pre-Email-Change Cipher", fetched.Name(), "Cipher name should survive email change")
+	u, p, err := fetched.GetLogin()
+	require.NoError(t, err, "GetLogin after email change")
+	assert.Equal(t, "myuser", u, "Username should survive email change")
+	assert.Equal(t, "mypass", p, "Password should survive email change")
+	t.Log("Cipher data verified after email change")
+}
