@@ -69,14 +69,15 @@ func main() {
 			},
 			&cli.BoolFlag{
 				Name:        "verbose",
+				Aliases:     []string{"v"},
 				Usage:       "Enable verbose logging",
 				Destination: &verbose,
 			},
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
-			logLevel := slog.LevelInfo
+			logLevel := slog.LevelWarn
 			if verbose {
-				logLevel = slog.LevelDebug
+				logLevel = slog.LevelInfo
 			}
 			logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
 
