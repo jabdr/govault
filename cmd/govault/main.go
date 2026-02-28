@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/jabdr/govault/pkg/api"
 	"github.com/jabdr/govault/pkg/vault"
@@ -73,6 +73,13 @@ func main() {
 				Usage:       "Enable verbose logging",
 				Destination: &verbose,
 			},
+			&cli.StringFlag{
+				Name:        "output",
+				Aliases:     []string{"o"},
+				Usage:       "Output format: text, json, yaml",
+				Value:       "text",
+				Destination: &outputFormat,
+			},
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			logLevel := slog.LevelWarn
@@ -117,8 +124,30 @@ func main() {
 		},
 	}
 
+	// Pre-parse --output/-o from raw args so we can suppress CLI framework errors
+	// for structured output formats (the Destination binding happens inside cmd.Run).
+	for i, arg := range os.Args {
+		if (arg == "--output" || arg == "-o") && i+1 < len(os.Args) {
+			outputFormat = os.Args[i+1]
+			break
+		}
+		if strings.HasPrefix(arg, "--output=") {
+			outputFormat = strings.TrimPrefix(arg, "--output=")
+			break
+		}
+		if strings.HasPrefix(arg, "-o=") {
+			outputFormat = strings.TrimPrefix(arg, "-o=")
+			break
+		}
+	}
+
+	// Suppress CLI framework error output for structured formats
+	if outputFormat != "" && outputFormat != "text" {
+		cmd.ErrWriter = io.Discard
+	}
+
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		printError(err)
 		os.Exit(1)
 	}
 }
@@ -246,7 +275,7 @@ func accountCmd() *cli.Command {
 					if err != nil {
 						return err
 					}
-					fmt.Printf("Client ID: %s\nClient Secret: %s\n", clientID, secret)
+					printOutput(APIKeyResult{ClientID: clientID, ClientSecret: secret})
 					return nil
 				},
 			},
@@ -655,7 +684,7 @@ func emergencyCmd() *cli.Command {
 
 func exitOnErr(err error) {
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		printError(err)
 		os.Exit(1)
 	}
 }
@@ -663,31 +692,38 @@ func exitOnErr(err error) {
 func actionList(v *vault.Vault) {
 	ciphers, err := v.ListCiphers()
 	exitOnErr(err)
+	results := make([]CipherResult, 0, len(ciphers))
 	for _, c := range ciphers {
-		fmt.Printf("%-36s  %-8s  %s\n", c.ID(), cipherTypeName(c.Type()), c.Name())
+		results = append(results, CipherResult{
+			ID:   c.ID(),
+			Name: c.Name(),
+			Type: cipherTypeName(c.Type()),
+		})
 	}
+	printList(results)
 }
 
 func actionGet(v *vault.Vault, id string) {
 	c, err := v.GetCipher(id)
 	exitOnErr(err)
-	fmt.Printf("ID:   %s\n", c.ID())
-	fmt.Printf("Name: %s\n", c.Name())
-	fmt.Printf("Type: %s\n", cipherTypeName(c.Type()))
-
-	if c.Type() == vault.CipherTypeLogin { // CipherTypeLogin
+	result := CipherResult{
+		ID:   c.ID(),
+		Name: c.Name(),
+		Type: cipherTypeName(c.Type()),
+	}
+	if c.Type() == vault.CipherTypeLogin {
 		if u, p, err := c.GetLogin(); err == nil {
-			fmt.Printf("User: %s\n", u)
-			fmt.Printf("Pass: %s\n", p)
+			result.Username = u
+			result.Password = p
 		}
 		if urls, err := c.GetLoginURLs(); err == nil && len(urls) > 0 {
-			fmt.Printf("URLs: %s\n", strings.Join(urls, ", "))
+			result.URLs = urls
 		}
 	}
 	if notes := c.Notes(); notes != "" {
-		fmt.Printf("Notes: %s\n", notes)
+		result.Notes = notes
 	}
-
+	printOutput(result)
 }
 
 func actionCreate(v *vault.Vault, cmd *cli.Command) {
@@ -719,7 +755,7 @@ func actionCreate(v *vault.Vault, cmd *cli.Command) {
 
 	err = v.CreateCipher(c)
 	exitOnErr(err)
-	fmt.Printf("Created cipher: %s\n", c.ID())
+	printOutput(MessageResult{Message: fmt.Sprintf("Created cipher: %s", c.ID()), ID: c.ID()})
 }
 
 func actionUpdate(v *vault.Vault, cmd *cli.Command) {
@@ -756,13 +792,13 @@ func actionUpdate(v *vault.Vault, cmd *cli.Command) {
 
 	err = v.UpdateCipher(c)
 	exitOnErr(err)
-	fmt.Printf("Updated cipher: %s\n", c.ID())
+	printOutput(MessageResult{Message: fmt.Sprintf("Updated cipher: %s", c.ID()), ID: c.ID()})
 }
 
 func actionDelete(v *vault.Vault, id string) {
 	err := v.DeleteCipher(id)
 	exitOnErr(err)
-	fmt.Printf("Deleted cipher: %s\n", id)
+	printOutput(MessageResult{Message: fmt.Sprintf("Deleted cipher: %s", id), ID: id})
 }
 
 func actionChangePassword(v *vault.Vault, currentPassword, newPassword string, kdf, kdfIter, kdfMem, kdfParal int) {
@@ -773,26 +809,27 @@ func actionChangePassword(v *vault.Vault, currentPassword, newPassword string, k
 func actionOrgList(v *vault.Vault) {
 	orgs, err := v.ListOrganizations()
 	exitOnErr(err)
+	results := make([]OrgResult, 0, len(orgs))
 	for _, o := range orgs {
-		fmt.Printf("%s  %s\n", o.ID, o.Name)
+		results = append(results, OrgResult{ID: o.ID, Name: o.Name})
 	}
+	printList(results)
 }
 
 func actionOrgCreate(v *vault.Vault, name, billingEmail, collectionName string) {
 	orgID, err := v.CreateOrganization(name, billingEmail, collectionName)
 	exitOnErr(err)
-	fmt.Printf("Created organization: %s\n", orgID)
+	printOutput(MessageResult{Message: fmt.Sprintf("Created organization: %s", orgID), ID: orgID})
 }
 
 func actionOrgMembers(v *vault.Vault, orgID string) {
 	members, err := v.ListOrgMembers(orgID)
 	exitOnErr(err)
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tEMAIL\tSTATUS\tTYPE")
+	results := make([]OrgMemberResult, 0, len(members))
 	for _, m := range members {
-		fmt.Fprintf(w, "%s\t%s\t%d\t%d\n", m.ID, m.Email, m.Status, m.Type)
+		results = append(results, OrgMemberResult{ID: m.ID, Email: m.Email, Status: m.Status, Type: m.Type})
 	}
-	w.Flush()
+	printList(results)
 }
 
 func actionOrgInvite(v *vault.Vault, orgID, emails string) {
@@ -802,31 +839,29 @@ func actionOrgInvite(v *vault.Vault, orgID, emails string) {
 	}
 	err := v.InviteToOrganization(orgID, emailList, 1) // 1=User
 	exitOnErr(err)
-	fmt.Printf("Invited %d users to org %s\n", len(emailList), orgID)
+	printOutput(MessageResult{Message: fmt.Sprintf("Invited %d users to org %s", len(emailList), orgID)})
 }
 
 func actionOrgConfirm(v *vault.Vault, orgID, memberID string) {
 	err := v.ConfirmMember(orgID, memberID)
 	exitOnErr(err)
-	fmt.Printf("Confirmed member %s in org %s\n", memberID, orgID)
+	printOutput(MessageResult{Message: fmt.Sprintf("Confirmed member %s in org %s", memberID, orgID), ID: memberID})
 }
 
 func actionCollections(v *vault.Vault, orgID string) {
 	cols, err := v.ListCollections(orgID)
 	exitOnErr(err)
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tNAME\tSYNC")
+	results := make([]CollectionResult, 0, len(cols))
 	for _, c := range cols {
-		fmt.Fprintf(w, "%s\t%s\t%t\n", c.ID, c.Name, err == nil)
+		results = append(results, CollectionResult{ID: c.ID, Name: c.Name})
 	}
-	w.Flush()
+	printList(results)
 }
 
 func actionCollectionCreate(v *vault.Vault, orgID, name string) {
 	col, err := v.CreateCollection(orgID, name)
 	exitOnErr(err)
-	fmt.Printf("Created: %s\n", col.ID)
+	printOutput(MessageResult{Message: fmt.Sprintf("Created: %s", col.ID), ID: col.ID})
 }
 
 func actionCollectionUpdate(v *vault.Vault, orgID, collectionIDOrName, reqUsers, reqGroups string) {
@@ -921,30 +956,28 @@ func actionCollectionUpdate(v *vault.Vault, orgID, collectionIDOrName, reqUsers,
 
 	err = v.UpdateCollectionPermissions(orgID, collectionID, groupsAccess, users)
 	exitOnErr(err)
-	fmt.Printf("Collection permissions updated for %s\n", collectionID)
+	printOutput(MessageResult{Message: fmt.Sprintf("Collection permissions updated for %s", collectionID), ID: collectionID})
 }
 
 func actionGroups(v *vault.Vault, orgID string) {
 	groups, err := v.ListGroups(orgID)
 	exitOnErr(err)
 
-	if len(groups) == 0 {
-		fmt.Println("No groups found.")
+	results := make([]GroupResult, 0, len(groups))
+	for _, g := range groups {
+		results = append(results, GroupResult{ID: g.ID, Name: g.Name, AccessAll: g.AccessAll})
+	}
+	if len(results) == 0 {
+		printOutput(MessageResult{Message: "No groups found."})
 		return
 	}
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tNAME\tACCESS ALL")
-	for _, g := range groups {
-		fmt.Fprintf(w, "%s\t%s\t%t\n", g.ID, g.Name, g.AccessAll)
-	}
-	w.Flush()
+	printList(results)
 }
 
 func actionGroupCreate(v *vault.Vault, orgID, name string, accessAll bool) {
 	grp, err := v.CreateGroup(orgID, name, accessAll)
 	exitOnErr(err)
-	fmt.Printf("Created Group: %s (ID: %s)\n", grp.Name, grp.ID)
+	printOutput(MessageResult{Message: fmt.Sprintf("Created Group: %s (ID: %s)", grp.Name, grp.ID), ID: grp.ID})
 }
 
 func actionGroupUpdate(v *vault.Vault, orgID, idOrName, name string, accessAll bool) {
@@ -961,7 +994,7 @@ func actionGroupUpdate(v *vault.Vault, orgID, idOrName, name string, accessAll b
 
 	err = v.UpdateGroup(orgID, groupID, name, accessAll)
 	exitOnErr(err)
-	fmt.Printf("Updated Group: %s\n", groupID)
+	printOutput(MessageResult{Message: fmt.Sprintf("Updated Group: %s", groupID), ID: groupID})
 }
 
 func actionGroupDelete(v *vault.Vault, orgID, idOrName string) {
@@ -978,27 +1011,29 @@ func actionGroupDelete(v *vault.Vault, orgID, idOrName string) {
 
 	err = v.DeleteGroup(orgID, groupID)
 	exitOnErr(err)
-	fmt.Printf("Deleted Group: %s\n", groupID)
+	printOutput(MessageResult{Message: fmt.Sprintf("Deleted Group: %s", groupID), ID: groupID})
 }
 
 func actionCollectionDelete(v *vault.Vault, orgID, collectionID string) {
 	err := v.DeleteCollection(orgID, collectionID)
 	exitOnErr(err)
-	fmt.Printf("Deleted collection: %s\n", collectionID)
+	printOutput(MessageResult{Message: fmt.Sprintf("Deleted collection: %s", collectionID), ID: collectionID})
 }
 
 func actionSends(v *vault.Vault) {
 	sends, err := v.ListSends()
 	exitOnErr(err)
+	results := make([]SendResult, 0, len(sends))
 	for _, s := range sends {
-		fmt.Printf("%s  %s (Views: %d/%d)\n", s.ID, s.Name, s.AccessCount, s.MaxAccessCount)
+		results = append(results, SendResult{ID: s.ID, Name: s.Name, AccessCount: s.AccessCount, MaxAccessCount: s.MaxAccessCount})
 	}
+	printList(results)
 }
 
 func actionSendCreate(v *vault.Vault, name, text string) {
 	s, _, err := v.CreateTextSend(name, text, vault.SendOptions{})
 	exitOnErr(err)
-	fmt.Printf("Created send: %s\n", s.ID)
+	printOutput(MessageResult{Message: fmt.Sprintf("Created send: %s", s.ID), ID: s.ID})
 	// BaseURL and clientAccess are not directly exported this simply anymore based on structure
 }
 
@@ -1013,83 +1048,86 @@ func actionSendGet(v *vault.Vault, id string) {
 		}
 	}
 	if send == nil {
-		fmt.Printf("Send not found: %s\n", id)
+		printOutput(MessageResult{Message: fmt.Sprintf("Send not found: %s", id)})
 		return
 	}
-	fmt.Printf("ID:   %s\n", send.ID)
-	fmt.Printf("Name: %s\n", send.Name)
+	result := SendResult{ID: send.ID, Name: send.Name}
 	if send.Type == vault.SendTypeText {
-		fmt.Printf("Text: %s\n", send.Text)
+		result.Text = send.Text
 	}
+	printOutput(result)
 }
 
 func actionSendDelete(v *vault.Vault, id string) {
 	err := v.DeleteSend(id)
 	exitOnErr(err)
-	fmt.Printf("Deleted send: %s\n", id)
+	printOutput(MessageResult{Message: fmt.Sprintf("Deleted send: %s", id), ID: id})
 }
 
 func actionEmergencyTrusted(v *vault.Vault) {
 	contacts, err := v.ListTrustedEmergencyAccess()
 	exitOnErr(err)
-	fmt.Println("Trusted Emergency Contacts (where I am the grantor):")
+	results := make([]EmergencyContactResult, 0, len(contacts))
 	for _, c := range contacts {
-		fmt.Printf("  %s  %s  (Status: %d, Type: %d)\n", c.ID, c.Email, c.Status, c.Type)
+		results = append(results, EmergencyContactResult{ID: c.ID, Email: c.Email, Status: c.Status, Type: c.Type})
 	}
+	printList(results)
 }
 
 func actionEmergencyGranted(v *vault.Vault) {
 	granted, err := v.ListGrantedEmergencyAccess()
 	exitOnErr(err)
-	fmt.Println("Granted Emergency Access (where I am the grantee):")
+	results := make([]EmergencyContactResult, 0, len(granted))
 	for _, g := range granted {
-		fmt.Printf("  %s  %s  (Status: %d, Type: %d)\n", g.ID, g.Email, g.Status, g.Type)
+		results = append(results, EmergencyContactResult{ID: g.ID, Email: g.Email, Status: g.Status, Type: g.Type})
 	}
+	printList(results)
 }
 
 func actionEmergencyInvite(v *vault.Vault, email string, accessType, waitDays int) {
 	err := v.InviteEmergencyAccess(email, accessType, waitDays)
 	exitOnErr(err)
-	fmt.Printf("Invited %s as emergency contact\n", email)
+	printOutput(MessageResult{Message: fmt.Sprintf("Invited %s as emergency contact", email)})
 }
 
 func actionEmergencyConfirm(v *vault.Vault, id string) {
 	err := v.ConfirmEmergencyAccess(id)
 	exitOnErr(err)
-	fmt.Printf("Confirmed emergency contact %s\n", id)
+	printOutput(MessageResult{Message: fmt.Sprintf("Confirmed emergency contact %s", id), ID: id})
 }
 
 func actionEmergencyInitiate(v *vault.Vault, id string) {
 	err := v.InitiateEmergencyAccess(id)
 	exitOnErr(err)
-	fmt.Printf("Initiated emergency access for %s\n", id)
+	printOutput(MessageResult{Message: fmt.Sprintf("Initiated emergency access for %s", id), ID: id})
 }
 
 func actionEmergencyApprove(v *vault.Vault, id string) {
 	err := v.ApproveEmergencyAccess(id)
 	exitOnErr(err)
-	fmt.Printf("Approved emergency access request %s\n", id)
+	printOutput(MessageResult{Message: fmt.Sprintf("Approved emergency access request %s", id), ID: id})
 }
 
 func actionEmergencyReject(v *vault.Vault, id string) {
 	err := v.RejectEmergencyAccess(id)
 	exitOnErr(err)
-	fmt.Printf("Rejected emergency access request %s\n", id)
+	printOutput(MessageResult{Message: fmt.Sprintf("Rejected emergency access request %s", id), ID: id})
 }
 
 func actionEmergencyView(v *vault.Vault, id string) {
 	ciphers, err := v.ViewEmergencyVault(id)
 	exitOnErr(err)
-	fmt.Println("Ciphers available via emergency access:")
+	results := make([]CipherResult, 0, len(ciphers))
 	for _, c := range ciphers {
-		fmt.Printf("%-36s  %s\n", c.ID(), c.Name())
+		results = append(results, CipherResult{ID: c.ID(), Name: c.Name(), Type: cipherTypeName(c.Type())})
 	}
+	printList(results)
 }
 
 func actionEmergencyTakeover(v *vault.Vault, id, newPassword string) {
 	err := v.TakeoverEmergencyAccess(id, newPassword)
 	exitOnErr(err)
-	fmt.Printf("Emergency takeover successful for %s. New master password is set.\n", id)
+	printOutput(MessageResult{Message: fmt.Sprintf("Emergency takeover successful for %s. New master password is set.", id), ID: id})
 }
 
 // -----------------------------------------------------------------------------
@@ -1114,7 +1152,7 @@ func registerCmd() *cli.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Account %s successfully registered\n", email)
+			printOutput(MessageResult{Message: fmt.Sprintf("Account %s successfully registered", email)})
 			return nil
 		},
 	}

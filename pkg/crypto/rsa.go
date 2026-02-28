@@ -3,7 +3,7 @@ package crypto
 import (
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha1"
+	"crypto/sha1" // nolint: gosec
 	"crypto/x509"
 	"fmt"
 )
@@ -43,7 +43,7 @@ func RSAEncrypt(data, publicKeyDER []byte) ([]byte, error) {
 		return nil, fmt.Errorf("crypto: not an RSA public key")
 	}
 
-	encrypted, err := rsa.EncryptOAEP(sha1.New(), rand.Reader, rsaPub, data, nil)
+	encrypted, err := rsa.EncryptOAEP(sha1.New(), rand.Reader, rsaPub, data, nil) // nolint: gosec
 	if err != nil {
 		return nil, fmt.Errorf("crypto: RSA encrypt: %w", err)
 	}
@@ -57,7 +57,7 @@ func RSADecrypt(data, privateKeyDER []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	decrypted, err := rsa.DecryptOAEP(sha1.New(), rand.Reader, privKey, data, nil)
+	decrypted, err := rsa.DecryptOAEP(sha1.New(), rand.Reader, privKey, data, nil) // nolint: gosec
 	if err != nil {
 		return nil, fmt.Errorf("crypto: RSA decrypt: %w", err)
 	}
