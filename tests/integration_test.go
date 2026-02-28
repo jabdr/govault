@@ -198,28 +198,6 @@ func TestFileSendLifecycle(t *testing.T) {
 	t.Log("Send file lifecycle complete")
 }
 
-func TestEmergencyAccessLifecycle(t *testing.T) {
-	email := "test-ea-grantor@example.com"
-	password := "test-password-123"
-
-	// Register user
-	RegisterTestUser(t, testServer, email, password)
-
-	v := APILogin(t, testServer, email, password)
-
-	// List trusted (grantor view)
-	trusted, err := v.ListTrustedEmergencyAccess()
-	require.NoError(t, err, "ListTrustedEmergencyAccess")
-	t.Logf("Trusted emergency contacts: %d", len(trusted))
-
-	// Invite
-	err = v.InviteEmergencyAccess("grantee@example.com", 0, 7)
-	if err != nil {
-		t.Logf("InviteEmergencyAccess: %v (may require mail)", err)
-	}
-
-	t.Log("Emergency access lifecycle test complete")
-}
 
 func TestAPIKeyLogin(t *testing.T) {
 	email := "test-apikey@example.com"
@@ -394,4 +372,111 @@ func TestFolderCRUDLifecycle(t *testing.T) {
 	folders, err = v.ListFolders()
 	require.NoError(t, err, "ListFolders after delete")
 	assert.Empty(t, folders, "Folder list should be empty after delete")
+}
+
+func TestEmergencyAccessLifecycle(t *testing.T) {
+	grantorEmail := fmt.Sprintf("ea-grantor-%d@example.com", time.Now().UnixNano())
+	granteeEmail := fmt.Sprintf("ea-grantee-%d@example.com", time.Now().UnixNano())
+	password := "test-password-123"
+
+	// 1. Register and login both users
+	RegisterTestUser(t, testServer, grantorEmail, password)
+	RegisterTestUser(t, testServer, granteeEmail, password)
+
+	grantorVault := APILogin(t, testServer, grantorEmail, password)
+	granteeVault := APILogin(t, testServer, granteeEmail, password)
+
+	// Create a cipher in grantor's vault to verify access later
+	c, err := vault.NewCipher(vault.CipherTypeLogin, "Grantor Secret", grantorVault.SymmetricKey())
+	require.NoError(t, err)
+	require.NoError(t, c.SetLoginUsername("grantoruser"))
+	require.NoError(t, grantorVault.CreateCipher(c))
+
+	// 2. Grantor invites Grantee
+	// Type 0 = View, WaitTimeDays = 0 (for testing)
+	err = grantorVault.InviteEmergencyAccess(granteeEmail, 0, 0)
+	require.NoError(t, err, "InviteEmergencyAccess")
+	t.Logf("Grantor (%s) invited grantee (%s)", grantorEmail, granteeEmail)
+
+	// Check grantor's trusted list first
+	trusted, err := grantorVault.ListTrustedEmergencyAccess()
+	require.NoError(t, err)
+	t.Logf("Grantor trusted list size: %d", len(trusted))
+	require.NotEmpty(t, trusted, "Grantor should see the invited contact")
+	eaID := trusted[0].ID
+	t.Logf("Emergency Access ID: %s", eaID)
+
+	// 4. Grantee gets token and accepts
+	token := GetInviteToken(t, granteeEmail)
+	require.NotEmpty(t, token, "GetInviteToken")
+	err = granteeVault.AcceptEmergencyAccess(eaID, token)
+	require.NoError(t, err, "AcceptEmergencyAccess")
+	t.Log("Grantee accepted invitation")
+
+	// Now grantee should see it in their granted list
+	granted, err := granteeVault.ListGrantedEmergencyAccess()
+	require.NoError(t, err)
+	t.Logf("Grantee granted list size: %d", len(granted))
+	require.Len(t, granted, 1, "Grantee should now see the granted access")
+	assert.Equal(t, 1, granted[0].Status, "Expected status ACCEPTED (1)")
+
+	// 5. Grantor confirms Grantee
+	// Wait for status to update to ACCEPTED
+	for i := 0; i < 5; i++ {
+		trusted, err := grantorVault.ListTrustedEmergencyAccess()
+		require.NoError(t, err)
+		if trusted[0].Status == 1 { // ACCEPTED
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	err = grantorVault.ConfirmEmergencyAccess(eaID)
+	require.NoError(t, err, "ConfirmEmergencyAccess")
+	t.Log("Grantor confirmed grantee")
+
+	// 6. Grantee initiates access
+	// Wait for status to update to CONFIRMED
+	for i := 0; i < 5; i++ {
+		granted, err = granteeVault.ListGrantedEmergencyAccess()
+		require.NoError(t, err)
+		if granted[0].Status == 2 { // CONFIRMED
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	err = granteeVault.InitiateEmergencyAccess(eaID)
+	require.NoError(t, err, "InitiateEmergencyAccess")
+	t.Log("Grantee initiated access")
+
+	// 7. Grantor approves access early (to skip wait time)
+	err = grantorVault.ApproveEmergencyAccess(eaID)
+	require.NoError(t, err, "ApproveEmergencyAccess")
+	t.Log("Grantor approved access early")
+
+	// 8. Grantee views Grantor's vault
+	// Wait for status to update to APPROVED
+	for i := 0; i < 5; i++ {
+		granted, err = granteeVault.ListGrantedEmergencyAccess()
+		require.NoError(t, err)
+		if granted[0].Status == 4 { // RECOVERY_APPROVED
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	grantorCiphers, err := granteeVault.ViewEmergencyVault(eaID)
+	require.NoError(t, err, "ViewEmergencyVault")
+	require.NotEmpty(t, grantorCiphers, "Should see grantor's ciphers")
+
+	foundSecret := false
+	for _, gc := range grantorCiphers {
+		if gc.Name() == "Grantor Secret" {
+			foundSecret = true
+			break
+		}
+	}
+	assert.True(t, foundSecret, "Grantee should find grantor's secret cipher")
+	t.Log("Grantee successfully viewed grantor's vault")
 }

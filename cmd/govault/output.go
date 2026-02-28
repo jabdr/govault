@@ -96,18 +96,21 @@ func printError(err error) {
 	result := ErrorResult{Error: err.Error()}
 	switch outputFormat {
 	case "json":
-		enc := json.NewEncoder(os.Stderr)
-		enc.SetIndent("", "  ")
-		_ = enc.Encode(result)
+		out, err2 := json.MarshalIndent(map[string]any{"error": err.Error()}, "", "  ")
+		if err2 != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return
+		}
+		_, _ = fmt.Fprint(os.Stderr, string(out))
 	case "yaml":
 		out, marshalErr := yaml.Marshal(result)
 		if marshalErr != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			return
 		}
-		fmt.Fprint(os.Stderr, string(out))
+		_, _ = fmt.Fprint(os.Stderr, string(out))
 	default:
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 	}
 }
 

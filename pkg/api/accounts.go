@@ -177,3 +177,16 @@ func (c *Client) ChangeEmail(req *ChangeEmailRequest) error {
 	}
 	return nil
 }
+
+// GetUserPublicKey retrieves the public key of another user.
+func (c *Client) GetUserPublicKey(userID string) (string, error) {
+	c.logger.Info("fetching user public key", "userId", userID)
+	var resp struct {
+		PublicKey string `json:"publicKey"`
+	}
+	err := c.doRequest(http.MethodGet, "/api/users/"+userID+"/public-key", nil, &resp)
+	if err != nil {
+		return "", fmt.Errorf("api: get user public key: %w", err)
+	}
+	return resp.PublicKey, nil
+}

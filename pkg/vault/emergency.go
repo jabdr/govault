@@ -70,30 +70,25 @@ func (v *Vault) ConfirmEmergencyAccess(emergencyAccessID string) error {
 		return fmt.Errorf("vault: no grantee ID for emergency access %s", emergencyAccessID)
 	}
 
-	// For emergency access, we need to encrypt our symmetric key with the
-	// grantee's public key. We use the sync profile to find their public key,
-	// or we need to get it some other way. The Bitwarden web vault retrieves
-	// the grantee user's public key via a separate endpoint.
-	// For now, we RSA-encrypt with any available mechanism.
-
-	// Bitwarden encrypts the grantor's enc key with the grantee's RSA pub key.
-	// The grantee's public key is available from the user profile.
-	// We'll use the emergency access endpoint directly which expects the
-	// encrypted key.
-
-	// Since we need the grantee's public key and there isn't a direct API
-	// for that in the emergency access flow, the web vault works around this.
-	// For our library, the key must be provided or retrieved externally.
-	// The actual implementation would need to fetch the user's public key.
-
-	// For now, we'll encrypt with the stored mechanism
-	encKey, err := crypto.EncryptToEncString(v.symKey.Bytes(), v.symKey)
+	// Fetch grantee's public key
+	pubKeyBase64, err := v.client.GetUserPublicKey(ea.GranteeID)
 	if err != nil {
-		return fmt.Errorf("vault: encrypt for emergency access: %w", err)
+		return fmt.Errorf("vault: get grantee public key: %w", err)
+	}
+
+	pubKeyDER, err := base64.StdEncoding.DecodeString(pubKeyBase64)
+	if err != nil {
+		return fmt.Errorf("vault: decode grantee public key: %w", err)
+	}
+
+	// RSA-encrypt our symmetric key with the grantee's public key
+	encKeyStr, err := crypto.EncryptOrgKeyForMember(v.symKey, pubKeyDER)
+	if err != nil {
+		return fmt.Errorf("vault: rsa-encrypt for emergency access: %w", err)
 	}
 
 	return v.client.ConfirmEmergencyAccess(emergencyAccessID, &api.EmergencyAccessConfirmRequest{
-		Key: encKey.String(),
+		Key: encKeyStr,
 	})
 }
 
