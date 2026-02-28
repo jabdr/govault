@@ -37,6 +37,7 @@ type Send struct {
 	Disabled       bool
 	DeletionDate   string
 	ExpirationDate string
+	URL            string
 }
 
 // CreateTextSend creates a new text Send and returns it along with the access URL.
@@ -120,6 +121,7 @@ func (v *Vault) CreateTextSend(name, text string, opts SendOptions) (*Send, stri
 		Name:         name,
 		Text:         text,
 		DeletionDate: resp.DeletionDate,
+		URL:          accessURL,
 	}
 
 	v.logger.Info("send created", "id", resp.ID, "accessURL", accessURL)
@@ -232,6 +234,7 @@ func (v *Vault) CreateFileSend(name, fileName string, data []byte, opts SendOpti
 		Name:         name,
 		FileName:     fileName,
 		DeletionDate: resp.DeletionDate,
+		URL:          accessURL,
 	}
 
 	v.logger.Info("file send created", "id", resp.ID, "accessURL", accessURL)
@@ -258,15 +261,29 @@ func (v *Vault) ListSends() ([]*Send, error) {
 
 		// Try to decrypt the name
 		if s.Key != "" {
-			sendKey := v.decryptSendKey(s.Key)
-			if sendKey != nil {
-				send.Name = decryptString(s.Name, sendKey)
-				if s.Text != nil {
-					send.Text = decryptString(s.Text.Text, sendKey)
-				}
-				if s.File != nil {
-					if fn, ok := s.File["fileName"].(string); ok {
-						send.FileName = decryptString(fn, sendKey)
+			encStr, err := crypto.ParseEncString(s.Key)
+			if err == nil {
+				decrypted, err := encStr.Decrypt(v.symKey)
+				if err == nil {
+					// Reconstruct URL
+					send.URL = fmt.Sprintf("%s/#/send/%s/%s",
+						v.client.BaseURL(),
+						s.AccessID,
+						crypto.EncodeSendSecret(decrypted),
+					)
+
+					// Derive the 64-byte key for data decryption
+					sendKey, err := crypto.DeriveSendKey(decrypted)
+					if err == nil {
+						send.Name = decryptString(s.Name, sendKey)
+						if s.Text != nil {
+							send.Text = decryptString(s.Text.Text, sendKey)
+						}
+						if s.File != nil {
+							if fn, ok := s.File["fileName"].(string); ok {
+								send.FileName = decryptString(fn, sendKey)
+							}
+						}
 					}
 				}
 			}

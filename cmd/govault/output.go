@@ -119,10 +119,15 @@ func printError(err error) {
 type MessageResult struct {
 	Message string `json:"message" yaml:"message"`
 	ID      string `json:"id,omitempty" yaml:"id,omitempty"`
+	URL     string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
 func (m MessageResult) HumanString() string {
-	return m.Message + "\n"
+	res := m.Message + "\n"
+	if m.URL != "" {
+		res += "URL: " + m.URL + "\n"
+	}
+	return res
 }
 
 // CipherResult holds a decrypted cipher for output.
@@ -228,6 +233,8 @@ type SendResult struct {
 	ID             string `json:"id" yaml:"id"`
 	Name           string `json:"name" yaml:"name"`
 	Type           string `json:"type,omitempty" yaml:"type,omitempty"`
+	FileName       string `json:"file_name,omitempty" yaml:"file_name,omitempty"`
+	URL            string `json:"url,omitempty" yaml:"url,omitempty"`
 	Text           string `json:"text,omitempty" yaml:"text,omitempty"`
 	AccessCount    int    `json:"access_count,omitempty" yaml:"access_count,omitempty"`
 	MaxAccessCount *int   `json:"max_access_count,omitempty" yaml:"max_access_count,omitempty"`
@@ -248,7 +255,15 @@ func (s SendResult) TableRow() string {
 func (s SendResult) HumanString() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "ID:   %s\n", s.ID)
-	fmt.Fprintf(&sb, "Name: %s\n", s.Name)
+	if s.Name != "" {
+		fmt.Fprintf(&sb, "Name: %s\n", s.Name)
+	}
+	if s.FileName != "" {
+		fmt.Fprintf(&sb, "File: %s\n", s.FileName)
+	}
+	if s.URL != "" {
+		fmt.Fprintf(&sb, "URL:  %s\n", s.URL)
+	}
 	if s.Text != "" {
 		fmt.Fprintf(&sb, "Text: %s\n", s.Text)
 	}

@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 
+	"path/filepath"
+
 	"github.com/jabdr/govault/pkg/api"
 	"github.com/jabdr/govault/pkg/vault"
 	"github.com/urfave/cli/v3"
@@ -107,7 +109,7 @@ func main() {
 			}
 
 			if err != nil {
-				return ctx, fmt.Errorf("login failed: %v", err)
+				return ctx, fmt.Errorf("login failed: %w", err)
 			}
 			return ctx, nil
 		},
@@ -567,13 +569,14 @@ func sendCmd() *cli.Command {
 			},
 			{
 				Name:  "create",
-				Usage: "Create a text send",
+				Usage: "Create a send",
 				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "name", Required: true, Usage: "Send name"},
-					&cli.StringFlag{Name: "text", Required: true, Usage: "Send text content"},
+					&cli.StringFlag{Name: "name", Usage: "Send name (defaults to file name or 'Text Send')"},
+					&cli.StringFlag{Name: "text", Usage: "Send text content"},
+					&cli.StringFlag{Name: "file", Usage: "Path to file to upload"},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					actionSendCreate(vClient, cmd.String("name"), cmd.String("text"))
+					actionSendCreate(vClient, cmd.String("name"), cmd.String("text"), cmd.String("file"))
 					return nil
 				},
 			},
@@ -1060,16 +1063,45 @@ func actionSends(v *vault.Vault) {
 	exitOnErr(err)
 	results := make([]SendResult, 0, len(sends))
 	for _, s := range sends {
-		results = append(results, SendResult{ID: s.ID, Name: s.Name, AccessCount: s.AccessCount, MaxAccessCount: s.MaxAccessCount})
+		results = append(results, SendResult{
+			ID:             s.ID,
+			Name:           s.Name,
+			FileName:       s.FileName,
+			URL:            s.URL,
+			AccessCount:    s.AccessCount,
+			MaxAccessCount: s.MaxAccessCount,
+		})
 	}
 	printList(results)
 }
 
-func actionSendCreate(v *vault.Vault, name, text string) {
-	s, _, err := v.CreateTextSend(name, text, vault.SendOptions{})
-	exitOnErr(err)
-	printOutput(MessageResult{Message: fmt.Sprintf("Created send: %s", s.ID), ID: s.ID})
-	// BaseURL and clientAccess are not directly exported this simply anymore based on structure
+func actionSendCreate(v *vault.Vault, name, text, filePath string) {
+	if text == "" && filePath == "" {
+		exitOnErr(fmt.Errorf("either --text or --file must be provided"))
+	}
+
+	var s *vault.Send
+	var accessURL string
+	var err error
+
+	if filePath != "" {
+		data, err := os.ReadFile(filePath)
+		exitOnErr(err)
+		fileName := filepath.Base(filePath)
+		if name == "" {
+			name = fileName
+		}
+		s, accessURL, err = v.CreateFileSend(name, fileName, data, vault.SendOptions{})
+		exitOnErr(err)
+	} else {
+		if name == "" {
+			name = "Text Send"
+		}
+		s, accessURL, err = v.CreateTextSend(name, text, vault.SendOptions{})
+		exitOnErr(err)
+	}
+
+	printOutput(MessageResult{Message: fmt.Sprintf("Created send: %s", s.ID), ID: s.ID, URL: accessURL})
 }
 
 func actionSendGet(v *vault.Vault, id string) {
@@ -1086,7 +1118,13 @@ func actionSendGet(v *vault.Vault, id string) {
 		printOutput(MessageResult{Message: fmt.Sprintf("Send not found: %s", id)})
 		return
 	}
-	result := SendResult{ID: send.ID, Name: send.Name}
+	result := SendResult{
+		ID:          send.ID,
+		Name:        send.Name,
+		FileName:    send.FileName,
+		URL:         send.URL,
+		AccessCount: send.AccessCount,
+	}
 	if send.Type == vault.SendTypeText {
 		result.Text = send.Text
 	}
