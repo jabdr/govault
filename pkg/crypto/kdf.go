@@ -14,8 +14,8 @@ import (
 
 // KDF type constants matching the Bitwarden API.
 const (
-	KdfTypePBKDF2  = 0
-	KdfTypeArgon2  = 1
+	KdfTypePBKDF2 = 0
+	KdfTypeArgon2 = 1
 )
 
 // DeriveKey derives a 32-byte master key from a password and salt using the

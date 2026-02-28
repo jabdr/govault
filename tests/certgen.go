@@ -1,16 +1,16 @@
 package tests
 
 import (
-"crypto/rand"
-"crypto/rsa"
-"crypto/x509"
-"crypto/x509/pkix"
-"encoding/pem"
-"math/big"
-"net"
-"os"
-"path/filepath"
-"time"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
+	"net"
+	"os"
+	"path/filepath"
+	"time"
 )
 
 // generateTestCerts creates a temporary directory with certs.pem and key.pem.

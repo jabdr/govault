@@ -8,9 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"strings"
-
 	"path/filepath"
+	"strings"
 
 	"github.com/jabdr/govault/pkg/api"
 	"github.com/jabdr/govault/pkg/vault"
