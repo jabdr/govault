@@ -265,8 +265,14 @@ func orgCmd() *cli.Command {
 			{
 				Name:  "create",
 				Usage: "Create an organization",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "name", Required: true, Usage: "Organization name"},
+					&cli.StringFlag{Name: "billing-email", Required: true, Usage: "Billing email address"},
+					&cli.StringFlag{Name: "collection-name", Value: "Default Collection", Usage: "Name of the default collection"},
+				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return fmt.Errorf("Not implemented yet")
+					actionOrgCreate(vClient, cmd.String("name"), cmd.String("billing-email"), cmd.String("collection-name"))
+					return nil
 				},
 			},
 			{
@@ -762,6 +768,12 @@ func actionOrgList(v *vault.Vault) {
 	for _, o := range orgs {
 		fmt.Printf("%s  %s\n", o.ID, o.Name)
 	}
+}
+
+func actionOrgCreate(v *vault.Vault, name, billingEmail, collectionName string) {
+	orgID, err := v.CreateOrganization(name, billingEmail, collectionName)
+	exitOnErr(err)
+	fmt.Printf("Created organization: %s\n", orgID)
 }
 
 func actionOrgMembers(v *vault.Vault, orgID string) {
