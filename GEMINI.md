@@ -32,3 +32,4 @@ The project follows a standard Go project layout with a clear separation of conc
 - **Testing:** The project utilizes the `stretchr/testify` library for writing robust unit and integration tests, ensuring reliability across the application. Integrating Playwright browser tests is handled via `github.com/playwright-community/playwright-go` (no need to install Playwright via `npx`).
 - **Permissions:** Commands should be executed using standard user privileges. You should never attempt to use `sudo` commands within this project.
 - **Git Operations:** Never automatically commit changes in git. Allow the user to manually review and commit their changes unless explicitly instructed otherwise.
+- **Documentation Maintenance:** Always update the `README.md` file whenever there are significant changes to the CLI structure (subcommands, flags) or the public API in `pkg/vault`. Ensure examples stay current and functional.
