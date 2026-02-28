@@ -228,6 +228,20 @@ func (g GroupResult) TableRow() string {
 	return fmt.Sprintf("%s\t%s\t%t", g.ID, g.Name, g.AccessAll)
 }
 
+// FolderResult holds a folder for output.
+type FolderResult struct {
+	ID   string `json:"id" yaml:"id"`
+	Name string `json:"name" yaml:"name"`
+}
+
+func (f FolderResult) TableHeader() string {
+	return "ID\tNAME"
+}
+
+func (f FolderResult) TableRow() string {
+	return fmt.Sprintf("%s\t%s", f.ID, f.Name)
+}
+
 // SendResult holds a send for output.
 type SendResult struct {
 	ID             string `json:"id" yaml:"id"`

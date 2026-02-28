@@ -330,3 +330,68 @@ func TestChangeEmail(t *testing.T) {
 	assert.Equal(t, "mypass", p, "Password should survive email change")
 	t.Log("Cipher data verified after email change")
 }
+
+func TestFolderCRUDLifecycle(t *testing.T) {
+	email := fmt.Sprintf("test-folders-%d@example.com", time.Now().UnixNano())
+	password := "test-password-123"
+
+	RegisterTestUser(t, testServer, email, password)
+	v := APILogin(t, testServer, email, password)
+
+	// 1. Initially no folders
+	folders, err := v.ListFolders()
+	require.NoError(t, err, "ListFolders (empty)")
+	assert.Empty(t, folders, "Expected no folders initially")
+
+	// 2. Create a folder
+	f, err := v.CreateFolder("Work")
+	require.NoError(t, err, "CreateFolder")
+	assert.NotEmpty(t, f.ID, "Folder ID should not be empty")
+	assert.Equal(t, "Work", f.Name, "Folder name mismatch")
+	t.Logf("Created folder %q with ID %s", f.Name, f.ID)
+
+	// 3. List folders — should see the new one
+	folders, err = v.ListFolders()
+	require.NoError(t, err, "ListFolders after create")
+	require.Len(t, folders, 1, "Expected exactly one folder")
+	assert.Equal(t, f.ID, folders[0].ID)
+	assert.Equal(t, "Work", folders[0].Name)
+
+	// 4. Get folder by ID
+	fetched, err := v.GetFolder(f.ID)
+	require.NoError(t, err, "GetFolder")
+	assert.Equal(t, "Work", fetched.Name, "GetFolder name mismatch")
+
+	// 5. Rename the folder
+	updated, err := v.UpdateFolder(f.ID, "Personal")
+	require.NoError(t, err, "UpdateFolder")
+	assert.Equal(t, "Personal", updated.Name, "UpdateFolder name mismatch")
+
+	// 6. Verify new name persists
+	folders, err = v.ListFolders()
+	require.NoError(t, err, "ListFolders after update")
+	require.Len(t, folders, 1)
+	assert.Equal(t, "Personal", folders[0].Name)
+
+	// 7. Create a cipher assigned to the folder
+	c, err := vault.NewCipher(vault.CipherTypeLogin, "Folder Cipher", v.SymmetricKey())
+	require.NoError(t, err, "NewCipher")
+	require.NoError(t, c.SetLoginUsername("user1"), "SetLoginUsername")
+	require.NoError(t, c.SetLoginPassword("pass1"), "SetLoginPassword")
+	require.NoError(t, c.SetFolderID(f.ID), "SetFolderID")
+	require.NoError(t, v.CreateCipher(c), "CreateCipher in folder")
+	t.Logf("Created cipher %s in folder %s", c.ID(), f.ID)
+
+	// 8. Verify the cipher's folder assignment
+	fetched2, err := v.GetCipher(c.ID())
+	require.NoError(t, err, "GetCipher")
+	assert.Equal(t, f.ID, fetched2.FolderID(), "Cipher should be in the created folder")
+
+	// 9. Delete the folder
+	require.NoError(t, v.DeleteFolder(f.ID), "DeleteFolder")
+
+	// 10. Confirm folder list is now empty
+	folders, err = v.ListFolders()
+	require.NoError(t, err, "ListFolders after delete")
+	assert.Empty(t, folders, "Folder list should be empty after delete")
+}

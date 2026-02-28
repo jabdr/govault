@@ -60,6 +60,23 @@ func (c *Cipher) OrganizationID() string {
 	return id
 }
 
+// FolderID returns the cipher's folder ID or empty string.
+func (c *Cipher) FolderID() string {
+	id, _ := c.data["folderId"].(string)
+	return id
+}
+
+// SetFolderID assigns the cipher to a folder by its ID.
+// Pass an empty string to remove the folder assignment.
+func (c *Cipher) SetFolderID(id string) error {
+	if id == "" {
+		delete(c.data, "folderId")
+	} else {
+		c.data["folderId"] = id
+	}
+	return nil
+}
+
 // Name returns the decrypted cipher name.
 func (c *Cipher) Name() string {
 	return c.decryptField("name")
