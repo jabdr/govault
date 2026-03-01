@@ -189,6 +189,9 @@ func BrowserCreateCipher(t *testing.T, page playwright.Page, name, username, pas
 	closeBtn := page.Locator(`button[bitdialogclose][size="default"]`).First()
 	t.Log("Closing modal (if still open)...")
 	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
+
+	// Dismiss the success popup to speed up subsequent actions
+	BrowserDismissToast(t, page)
 }
 
 // BrowserCheckCipherExists verifies that a given cipher name is visible in the vault list.
@@ -251,6 +254,9 @@ func BrowserCreateSecureNote(t *testing.T, page playwright.Page, name, notes str
 
 	closeBtn := page.Locator(`button[bitdialogclose][size="default"]`).First()
 	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
+
+	// Dismiss the success popup to speed up subsequent actions
+	BrowserDismissToast(t, page)
 }
 
 // BrowserCreateCard creates a new card cipher through the web UI.
@@ -302,6 +308,9 @@ func BrowserCreateCard(t *testing.T, page playwright.Page, name, cardholderName,
 
 	closeBtn := page.Locator(`button[bitdialogclose][size="default"]`).First()
 	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
+
+	// Dismiss the success popup to speed up subsequent actions
+	BrowserDismissToast(t, page)
 }
 
 // BrowserVerifyCipherData clicks an item, checks its inputs, and closes the modal
@@ -346,4 +355,40 @@ func BrowserVerifyCipherData(t *testing.T, page playwright.Page, name string, ch
 
 	closeBtn := page.Locator(`button[bitdialogclose][size="default"], button:has-text('Cancel')`).First()
 	_ = closeBtn.Click()
+}
+
+// BrowserDismissToast attempts to click away any toast notifications (e.g., "Item created", "Item added").
+func BrowserDismissToast(t *testing.T, page playwright.Page) {
+	t.Helper()
+
+	// Bitwarden/Vaultwarden often uses various classes for toasts.
+	selectors := []string{
+		".toast",
+		".toast-container",
+		".alert-success",
+		".alert-info",
+		".bit-toast",
+		"div[role='alert']",
+		"text='Item added'",
+		"text='Item created'",
+	}
+
+	for _, selector := range selectors {
+		toast := page.Locator(selector).First()
+		if count, _ := toast.Count(); count > 0 && count != -1 {
+			t.Logf("Found toast notification matching: %s", selector)
+			// Look for a close button inside the toast
+			closeBtn := toast.Locator("button.close, button[aria-label='Close'], button:has-text('×'), .close").First()
+			if btnCount, _ := closeBtn.Count(); btnCount > 0 {
+				t.Log("Clicking close button inside toast...")
+				_ = closeBtn.Click(playwright.LocatorClickOptions{
+					Timeout: playwright.Float(500),
+				})
+			} else {
+				// Fallback: if no close button found, try clicking the toast itself only if it hasn't caused issues before
+				// Actually, the user warned against this. Let's just try to find more close button variants.
+				t.Log("No obvious close button found in toast.")
+			}
+		}
+	}
 }
