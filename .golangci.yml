@@ -19,6 +19,7 @@ linters:
     - sloglint
     - staticcheck
     - testifylint
+    - tparallel
     - unconvert
     - unparam
     - unused

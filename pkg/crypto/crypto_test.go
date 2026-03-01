@@ -10,6 +10,7 @@ import (
 )
 
 func TestDeriveKeyPBKDF2(t *testing.T) {
+	t.Parallel()
 	key, err := DeriveKey([]byte("password"), []byte("user@example.com"), KdfTypePBKDF2, 600000, nil, nil)
 	require.NoError(t, err, "DeriveKey PBKDF2")
 	assert.Len(t, key, 32, "expected 32 bytes")
@@ -20,6 +21,7 @@ func TestDeriveKeyPBKDF2(t *testing.T) {
 }
 
 func TestDeriveKeyArgon2(t *testing.T) {
+	t.Parallel()
 	salt := make([]byte, 32) // 32-byte salt
 	mem := 64 * 1024         // 64 MB
 	par := 4
@@ -29,11 +31,13 @@ func TestDeriveKeyArgon2(t *testing.T) {
 }
 
 func TestDeriveKeyArgon2MissingParams(t *testing.T) {
+	t.Parallel()
 	_, err := DeriveKey([]byte("password"), make([]byte, 32), KdfTypeArgon2, 3, nil, nil)
 	require.Error(t, err, "expected error for missing argon2 params")
 }
 
 func TestStretchKey(t *testing.T) {
+	t.Parallel()
 	masterKey := make([]byte, 32)
 	stretched, err := StretchKey(masterKey)
 	require.NoError(t, err, "StretchKey")
@@ -45,11 +49,13 @@ func TestStretchKey(t *testing.T) {
 }
 
 func TestStretchKeyInvalidLength(t *testing.T) {
+	t.Parallel()
 	_, err := StretchKey(make([]byte, 16))
 	require.Error(t, err, "expected error for non-32-byte key")
 }
 
 func TestHashPassword(t *testing.T) {
+	t.Parallel()
 	masterKey := make([]byte, 32)
 	hash := HashPassword("password", masterKey)
 	assert.NotEmpty(t, hash, "HashPassword returned empty string")
@@ -60,12 +66,12 @@ func TestHashPassword(t *testing.T) {
 }
 
 func TestAESEncryptDecryptRoundtrip(t *testing.T) {
+	t.Parallel()
 	plaintext := []byte("hello, bitwarden!")
 	encKey := make([]byte, 32)
 	macKey := make([]byte, 32)
 	rand.Read(encKey)
 	rand.Read(macKey)
-
 	iv, ct, mac, err := Encrypt(plaintext, encKey, macKey)
 	require.NoError(t, err, "Encrypt")
 
@@ -76,6 +82,7 @@ func TestAESEncryptDecryptRoundtrip(t *testing.T) {
 }
 
 func TestAESEmptyPlaintext(t *testing.T) {
+	t.Parallel()
 	encKey := make([]byte, 32)
 	macKey := make([]byte, 32)
 	rand.Read(encKey)
@@ -91,6 +98,7 @@ func TestAESEmptyPlaintext(t *testing.T) {
 }
 
 func TestAESHMACRejection(t *testing.T) {
+	t.Parallel()
 	plaintext := []byte("test data")
 	encKey := make([]byte, 32)
 	macKey := make([]byte, 32)
@@ -107,6 +115,7 @@ func TestAESHMACRejection(t *testing.T) {
 }
 
 func TestEncStringParseSerializeRoundtrip(t *testing.T) {
+	t.Parallel()
 	// Create a real encrypted string
 	key, _ := GenerateSymmetricKey()
 	original := []byte("secret vault item")
@@ -134,6 +143,7 @@ func TestEncStringParseSerializeRoundtrip(t *testing.T) {
 }
 
 func TestEncStringParseType4(t *testing.T) {
+	t.Parallel()
 	// Type 4 is just "4.base64data"
 	s := "4.dGVzdGRhdGE="
 	enc, err := ParseEncString(s)
@@ -147,6 +157,7 @@ func TestEncStringParseType4(t *testing.T) {
 }
 
 func TestEncStringParseErrors(t *testing.T) {
+	t.Parallel()
 	cases := []string{
 		"",
 		"missing_dot",
@@ -161,6 +172,7 @@ func TestEncStringParseErrors(t *testing.T) {
 }
 
 func TestRSAEncryptDecryptRoundtrip(t *testing.T) {
+	t.Parallel()
 	pub, priv, err := GenerateRSAKeyPair()
 	require.NoError(t, err, "GenerateRSAKeyPair")
 
@@ -176,6 +188,7 @@ func TestRSAEncryptDecryptRoundtrip(t *testing.T) {
 }
 
 func TestRSADecryptEncString(t *testing.T) {
+	t.Parallel()
 	pub, priv, err := GenerateRSAKeyPair()
 	require.NoError(t, err, "GenerateRSAKeyPair")
 
@@ -189,6 +202,7 @@ func TestRSADecryptEncString(t *testing.T) {
 }
 
 func TestEncryptOrgKeyForMember(t *testing.T) {
+	t.Parallel()
 	pub, priv, err := GenerateRSAKeyPair()
 	require.NoError(t, err, "GenerateRSAKeyPair")
 
@@ -211,6 +225,7 @@ func TestEncryptOrgKeyForMember(t *testing.T) {
 }
 
 func TestSymmetricKeyRoundtrip(t *testing.T) {
+	t.Parallel()
 	// Generate a symmetric key, encrypt it with a stretched key, decrypt
 	symKey, err := GenerateSymmetricKey()
 	require.NoError(t, err, "GenerateSymmetricKey")
@@ -237,6 +252,7 @@ func TestSymmetricKeyRoundtrip(t *testing.T) {
 }
 
 func TestSendKeyDerivation(t *testing.T) {
+	t.Parallel()
 	secret, err := GenerateSendSecret()
 	require.NoError(t, err, "GenerateSendSecret")
 	assert.Len(t, secret, SendSecretSize, "expected SendSecretSize bytes")
@@ -253,6 +269,7 @@ func TestSendKeyDerivation(t *testing.T) {
 }
 
 func TestSendKeyFromAccessURL(t *testing.T) {
+	t.Parallel()
 	secret, _ := GenerateSendSecret()
 	encoded := EncodeSendSecret(secret)
 
@@ -265,6 +282,7 @@ func TestSendKeyFromAccessURL(t *testing.T) {
 }
 
 func TestSendEncryptDecryptRoundtrip(t *testing.T) {
+	t.Parallel()
 	secret, _ := GenerateSendSecret()
 	sendKey, _ := DeriveSendKey(secret)
 

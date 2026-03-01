@@ -28,7 +28,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestCipherCRUDLifecycle(t *testing.T) {
-	email := "test-crud@example.com"
+	t.Parallel()
+	email := fmt.Sprintf("test-crud-%d@example.com", time.Now().UnixNano())
 	password := "test-password-123"
 
 	// Register user
@@ -66,7 +67,8 @@ func TestCipherCRUDLifecycle(t *testing.T) {
 }
 
 func TestSendLifecycle(t *testing.T) {
-	email := "test-send@example.com"
+	t.Parallel()
+	email := fmt.Sprintf("test-send-%d@example.com", time.Now().UnixNano())
 	password := "test-password-123"
 
 	// Register user
@@ -125,7 +127,8 @@ func TestSendLifecycle(t *testing.T) {
 }
 
 func TestFileSendLifecycle(t *testing.T) {
-	email := "test-send-file@example.com"
+	t.Parallel()
+	email := fmt.Sprintf("test-send-file-%d@example.com", time.Now().UnixNano())
 	password := "test-password-123"
 
 	RegisterTestUser(t, testServer, email, password)
@@ -196,7 +199,8 @@ func TestFileSendLifecycle(t *testing.T) {
 }
 
 func TestAPIKeyLogin(t *testing.T) {
-	email := "test-apikey@example.com"
+	t.Parallel()
+	email := fmt.Sprintf("test-apikey-%d@example.com", time.Now().UnixNano())
 	password := "test-password-123"
 
 	// Register user
@@ -227,6 +231,7 @@ func TestAPIKeyLogin(t *testing.T) {
 }
 
 func TestSelfRegistration(t *testing.T) {
+	t.Parallel()
 	// Generate a unique email to avoid "already exists" errors
 	email := fmt.Sprintf("test-reg-%d@example.com", time.Now().UnixNano())
 	password := "test-password-123"
@@ -256,6 +261,7 @@ func TestSelfRegistration(t *testing.T) {
 }
 
 func TestChangeEmail(t *testing.T) {
+	t.Parallel()
 	oldEmail := fmt.Sprintf("test-chgemail-%d@example.com", time.Now().UnixNano())
 	newEmail := fmt.Sprintf("test-newemail-%d@example.com", time.Now().UnixNano())
 	password := "test-password-123"
@@ -306,6 +312,7 @@ func TestChangeEmail(t *testing.T) {
 }
 
 func TestFolderCRUDLifecycle(t *testing.T) {
+	t.Parallel()
 	email := fmt.Sprintf("test-folders-%d@example.com", time.Now().UnixNano())
 	password := "test-password-123"
 
@@ -371,6 +378,7 @@ func TestFolderCRUDLifecycle(t *testing.T) {
 }
 
 func TestEmergencyAccessLifecycle(t *testing.T) {
+	t.Parallel()
 	grantorEmail := fmt.Sprintf("ea-grantor-%d@example.com", time.Now().UnixNano())
 	granteeEmail := fmt.Sprintf("ea-grantee-%d@example.com", time.Now().UnixNano())
 	password := "test-password-123"

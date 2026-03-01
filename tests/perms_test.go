@@ -3,14 +3,17 @@
 package tests
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/jabdr/govault/pkg/api"
 	"github.com/stretchr/testify/require"
 )
 
 func TestPermissions(t *testing.T) {
-	email := "test-perms@example.com"
+	t.Parallel()
+	email := fmt.Sprintf("test-perms-%d@example.com", time.Now().UnixNano())
 	password := "test-password-123"
 
 	RegisterTestUser(t, testServer, email, password)

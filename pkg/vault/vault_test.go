@@ -16,6 +16,7 @@ func testKey(t *testing.T) *crypto.SymmetricKey {
 }
 
 func TestCipherNewAndAccessors(t *testing.T) {
+	t.Parallel()
 	c, err := NewCipher(CipherTypeLogin, "Test Login", testKey(t))
 	require.NoError(t, err)
 	assert.Equal(t, CipherTypeLogin, c.Type(), "expected type")
@@ -24,6 +25,7 @@ func TestCipherNewAndAccessors(t *testing.T) {
 }
 
 func TestCipherSetGetField(t *testing.T) {
+	t.Parallel()
 	c, err := NewCipher(CipherTypeLogin, "Test", testKey(t))
 	require.NoError(t, err)
 	err = c.SetField("customField", "customValue")
@@ -38,6 +40,7 @@ func TestCipherSetGetField(t *testing.T) {
 }
 
 func TestCipherLoginGetSet(t *testing.T) {
+	t.Parallel()
 	c, err := NewCipher(CipherTypeLogin, "Login Entry", testKey(t))
 	require.NoError(t, err)
 	c.SetLoginUsername("user@example.com")
@@ -50,6 +53,7 @@ func TestCipherLoginGetSet(t *testing.T) {
 }
 
 func TestCipherEncryptDecryptRoundtrip(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 
 	// Create a cipher with plaintext fields
@@ -81,6 +85,7 @@ func TestCipherEncryptDecryptRoundtrip(t *testing.T) {
 }
 
 func TestCipherRaw(t *testing.T) {
+	t.Parallel()
 	c, err := NewCipher(CipherTypeSecureNote, "Note", testKey(t))
 	require.NoError(t, err)
 	raw := c.Raw()
@@ -89,6 +94,7 @@ func TestCipherRaw(t *testing.T) {
 }
 
 func TestDecryptString(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 
 	// Encrypt a string
@@ -105,6 +111,7 @@ func TestDecryptString(t *testing.T) {
 }
 
 func TestSymmetricKeyBytesRoundtrip(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	b := key.Bytes()
 	assert.Len(t, b, 64, "expected 64 bytes")

@@ -17,6 +17,7 @@ func testLogger() *slog.Logger {
 }
 
 func TestPrelogin(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/identity/accounts/prelogin", r.URL.Path, "unexpected path")
 		require.Equal(t, http.MethodPost, r.Method, "unexpected method")
@@ -40,6 +41,7 @@ func TestPrelogin(t *testing.T) {
 }
 
 func TestLogin(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/identity/connect/token", r.URL.Path, "unexpected path")
 		r.ParseForm()
@@ -64,6 +66,7 @@ func TestLogin(t *testing.T) {
 }
 
 func TestCipherCRUD(t *testing.T) {
+	t.Parallel()
 	var lastMethod, lastPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		lastMethod = r.Method
@@ -118,6 +121,7 @@ func TestCipherCRUD(t *testing.T) {
 }
 
 func TestSync(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/api/sync", r.URL.Path, "unexpected path")
 		require.Equal(t, http.MethodGet, r.Method, "unexpected method")
@@ -137,6 +141,7 @@ func TestSync(t *testing.T) {
 }
 
 func TestAPIError(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error":"unauthorized"}`))
@@ -152,6 +157,7 @@ func TestAPIError(t *testing.T) {
 }
 
 func TestListSends(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/api/sends", r.URL.Path, "unexpected path")
 		json.NewEncoder(w).Encode(map[string]any{
@@ -169,6 +175,7 @@ func TestListSends(t *testing.T) {
 }
 
 func TestEmergencyAccessList(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{
@@ -185,6 +192,7 @@ func TestEmergencyAccessList(t *testing.T) {
 }
 
 func TestListCollections(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{

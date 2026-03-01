@@ -3,6 +3,7 @@
 package tests
 
 import (
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -17,12 +18,13 @@ import (
 // TestAPIToUI verifies that a cipher created via the Go API client
 // is correctly visible and decrypted in the Vaultwarden Web UI.
 func TestAPIToUI(t *testing.T) {
+	t.Parallel()
 	// Skip browser tests if asked
 	if os.Getenv("SKIP_BROWSER_TESTS") == "1" {
 		t.Skip("SKIP_BROWSER_TESTS is set")
 	}
 
-	email := "api2ui@example.com"
+	email := fmt.Sprintf("api2ui-%d@example.com", time.Now().UnixNano())
 	password := "browser-pass-123"
 
 	// 1. Setup server and register user via API
@@ -45,11 +47,6 @@ func TestAPIToUI(t *testing.T) {
 	// 4. Browser Login
 	BrowserLogin(t, page, testServer, email, password)
 
-	// Wait for vault to sync (we wait for text "All items")
-	// The helper `BrowserLogin` already waits for "All items" to appear.
-	// But it might take a second for ciphers to populate.
-	time.Sleep(2 * time.Second)
-
 	// 5. Verify the created cipher appears in the Web UI
 	exists := BrowserCheckCipherExists(t, page, cipherName)
 	assert.True(t, exists, "Expected cipher '%s' to be visible in the Web UI", cipherName)
@@ -58,11 +55,12 @@ func TestAPIToUI(t *testing.T) {
 // TestUIToAPI verifies that a cipher created via the Vaultwarden Web UI
 // can be synced and successfully decrypted by the Go API client.
 func TestUIToAPI(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_BROWSER_TESTS") == "1" {
 		t.Skip("SKIP_BROWSER_TESTS is set")
 	}
 
-	email := "ui2api@example.com"
+	email := fmt.Sprintf("ui2api-%d@example.com", time.Now().UnixNano())
 	password := "browser-pass-123"
 
 	// 1. Setup server and register user via API (to save time on UI registration)
@@ -77,9 +75,6 @@ func TestUIToAPI(t *testing.T) {
 	cipherName := "Secret UI Cipher"
 	BrowserCreateCipher(t, page, cipherName, "uibot", "uipass")
 	t.Log("Created cipher via UI")
-
-	// Allow server enough time to persist and index the new cipher
-	time.Sleep(2 * time.Second)
 
 	// 4. Use API client to Login (which triggers a Sync automatically)
 	v := APILogin(t, testServer, email, password)
@@ -112,11 +107,12 @@ func TestUIToAPI(t *testing.T) {
 // TestPasswordRotationBrowser verifies that after a password rotation,
 // items created in the browser are still decrytable with the new password in the browser.
 func TestPasswordRotationBrowser(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_BROWSER_TESTS") == "1" {
 		t.Skip("SKIP_BROWSER_TESTS is set")
 	}
 
-	email := "rotate@example.com"
+	email := fmt.Sprintf("rotate-%d@example.com", time.Now().UnixNano())
 	password := "old-pass-123"
 	newPassword := "new-pass-456"
 
@@ -172,12 +168,13 @@ func TestPasswordRotationBrowser(t *testing.T) {
 }
 
 func TestSharedCipherRotationBrowser(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SKIP_BROWSER_TESTS") == "1" {
 		t.Skip("SKIP_BROWSER_TESTS is set")
 	}
 
-	email1 := "user1@example.com"
-	email2 := "user2@example.com"
+	email1 := fmt.Sprintf("user1-%d@example.com", time.Now().UnixNano())
+	email2 := fmt.Sprintf("user2-%d@example.com", time.Now().UnixNano())
 	password := "password123"
 	newPassword1 := "rotated-password-123"
 
