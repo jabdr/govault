@@ -58,22 +58,27 @@ func SetupPlaywright(t *testing.T) (*playwright.Playwright, playwright.Browser, 
 func BrowserLogin(t *testing.T, page playwright.Page, serverURL, email, password string) {
 	t.Helper()
 
+	t.Logf("Navigating to login page: %s", serverURL+"/#/login")
 	_, err := page.Goto(serverURL + "/#/login")
 	require.NoError(t, err, "failed to navigate to login page")
 
 	// Wait for the email field
+	t.Log("Waiting for email input field...")
 	emailInput := page.Locator("input[type='email'], input[id='email'], input[name='Email']").First()
 	err = emailInput.WaitFor()
 	require.NoError(t, err, "login email input not found")
 
+	t.Logf("Filling email: %s", email)
 	err = emailInput.Fill(email)
 	require.NoError(t, err, "failed to fill email")
 
 	// Submit email to go to the master password step
+	t.Log("Pressing Enter to submit email...")
 	err = emailInput.Press("Enter")
 	require.NoError(t, err, "failed to submit email")
 
 	// Wait for master password field
+	t.Log("Waiting for master password field...")
 	passwordInput := page.Locator("input[type='password'], input[id='masterPassword'], input[name='MasterPassword']").First()
 	err = passwordInput.WaitFor()
 	require.NoError(t, err, "login password input not found")
@@ -81,40 +86,48 @@ func BrowserLogin(t *testing.T, page playwright.Page, serverURL, email, password
 	// Small delay to allow transition animation to finish
 	time.Sleep(500 * time.Millisecond)
 
+	t.Logf("Filling password: %s", password)
 	err = passwordInput.Fill(password)
 	require.NoError(t, err, "failed to fill password")
 
 	time.Sleep(500 * time.Millisecond)
 
 	// Log in
+	t.Log("Clicking login button...")
 	err = page.Locator("button:has-text('Log in with master password'), button[type='submit']").First().Click()
 	require.NoError(t, err, "failed to submit password")
 
 	// Wait to be on the vault page or onboarding page
+	t.Log("Waiting for post-login page (vault or onboarding)...")
 	postLoginLocator := page.Locator("button:has-text('Add it later'), button[aria-label='Add item'], a[aria-label='Add item'], button:has-text('New item'), a:has-text('New item'), button[aria-label='New'], #newItemDropdown").First()
 	err = postLoginLocator.WaitFor(playwright.LocatorWaitForOptions{
 		Timeout: playwright.Float(30000), // Maximum 30s timeout for high KDF iterations
 	})
 	require.NoError(t, err, "failed to reach vault or onboarding after login")
+	t.Log("Post-login page reached.")
 
 	// If we are on the onboarding page, click 'Add it later'
 	addItLaterBtn := page.Locator("button:has-text('Add it later')").First()
 	// Attempt to click it if it exists (wait up to 4 seconds)
+	t.Log("Attempting to click 'Add it later' (onboarding)...")
 	_ = addItLaterBtn.Click(playwright.LocatorClickOptions{
 		Timeout: playwright.Float(4000),
 	})
 
 	skipToWebAppBtn := page.Locator("a:has-text('Skip to web app'), button:has-text('Skip to web app')").First()
+	t.Log("Attempting to click 'Skip to web app'...")
 	_ = skipToWebAppBtn.Click(playwright.LocatorClickOptions{
 		Timeout: playwright.Float(2000),
 	})
 
 	// Now wait for vault
+	t.Log("Waiting for vault dashboard...")
 	addItemBtn := page.Locator("button[aria-label='Add item'], a[aria-label='Add item'], button:has-text('New item'), a:has-text('New item'), button[aria-label='New'], #newItemDropdown").First()
 	err = addItemBtn.WaitFor(playwright.LocatorWaitForOptions{
 		Timeout: playwright.Float(30000),
 	})
 	require.NoError(t, err, "failed to reach vault after onboarding/login")
+	t.Log("Successfully reached vault dashboard.")
 }
 
 // BrowserCreateCipher creates a new login cipher through the web UI.
@@ -126,11 +139,13 @@ func BrowserCreateCipher(t *testing.T, page playwright.Page, name, username, pas
 	addItemBtn := page.Locator("#newItemDropdown").First()
 	err := addItemBtn.WaitFor()
 	require.NoError(t, err, "Add item button not found")
+	t.Log("Clicking 'Add item' button...")
 	err = addItemBtn.Click()
 	require.NoError(t, err, "failed to click add item")
 
 	// If it's a dropdown menu, click the "Login" option
 	loginOption := page.Locator("button[role='menuitem']:has-text('Login'), a[role='menuitem']:has-text('Login')").First()
+	t.Log("Selecting 'Login' option...")
 	_ = loginOption.Click(playwright.LocatorClickOptions{
 		Timeout: playwright.Float(3000), // Might not exist if the New button directly opens modal (older versions)
 	})
@@ -142,28 +157,35 @@ func BrowserCreateCipher(t *testing.T, page playwright.Page, name, username, pas
 	})
 	require.NoError(t, err, "Item name input not found")
 
+	t.Logf("Filling item name: %s", name)
 	err = nameInput.Fill(name)
 	require.NoError(t, err, "failed to fill item name")
 
 	usernameInput := page.Locator("input[formcontrolname='username'], input[id='username'], input[aria-label*='Username']").First()
+	t.Logf("Filling username: %s", username)
 	err = usernameInput.Fill(username)
 	require.NoError(t, err, "failed to fill username")
 
 	passwordInput := page.Locator("input[formcontrolname='password'], input[id='password'], input[aria-label*='Password'], input[type='password']").First()
+	t.Logf("Filling password: %s", password)
 	err = passwordInput.Fill(password)
 	require.NoError(t, err, "failed to fill password")
 
 	// Save
 	saveBtn := page.Locator("button:has-text('Save'), button[aria-label='Save']").First()
+	t.Log("Clicking 'Save' button...")
 	err = saveBtn.Click()
 	require.NoError(t, err, "failed to click save button")
 
 	// Wait for the modal to disappear or toast to appear
 	// Best robust way: wait for the new item to appear in the list
+	t.Logf("Waiting for item '%s' to appear in list...", name)
 	err = page.Locator(fmt.Sprintf("text=%s", name)).First().WaitFor()
 	require.NoError(t, err, "failed to see new item in the list after save")
+	t.Logf("Item '%s' found in list.", name)
 
 	closeBtn := page.Locator(`button[bitdialogclose][size="default"]`).First()
+	t.Log("Closing modal (if still open)...")
 	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
 
 	// Small delay to ensure DB write finishes
@@ -178,7 +200,7 @@ func BrowserCheckCipherExists(t *testing.T, page playwright.Page, name string) b
 	// Bitwarden has a search bar or list where we can locate the text
 	locator := page.Locator(fmt.Sprintf("text=%s", name)).First()
 
-	// We use a short timeout because if it's not there, we don't want to hang for 30s
+	t.Logf("Checking if cipher '%s' exists (waiting up to 3s)...", name)
 	err := locator.WaitFor(playwright.LocatorWaitForOptions{
 		Timeout: playwright.Float(3000),
 	})
@@ -193,10 +215,12 @@ func BrowserCreateSecureNote(t *testing.T, page playwright.Page, name, notes str
 	addItemBtn := page.Locator("#newItemDropdown").First()
 	err := addItemBtn.WaitFor()
 	require.NoError(t, err, "Add item button not found")
+	t.Log("Clicking 'Add item' button...")
 	err = addItemBtn.Click()
 	require.NoError(t, err, "failed to click add item")
 
 	typeOption := page.Locator("button[role='menuitem']:has-text('Note'), a[role='menuitem']:has-text('Note')").First()
+	t.Log("Selecting 'Note' option...")
 	_ = typeOption.Click(playwright.LocatorClickOptions{
 		Timeout: playwright.Float(3000),
 	})
@@ -207,19 +231,24 @@ func BrowserCreateSecureNote(t *testing.T, page playwright.Page, name, notes str
 	})
 	require.NoError(t, err, "Item name input not found")
 
+	t.Logf("Filling item name: %s", name)
 	err = nameInput.Fill(name)
 	require.NoError(t, err, "failed to fill item name")
 
 	notesInput := page.Locator("textarea[formcontrolname='notes'], textarea[id='notes'], textarea[aria-label*='Notes']").First()
+	t.Logf("Filling notes: %s", notes)
 	err = notesInput.Fill(notes)
 	require.NoError(t, err, "failed to fill notes")
 
 	saveBtn := page.Locator("button:has-text('Save'), button[aria-label='Save']").First()
+	t.Log("Clicking 'Save' button...")
 	err = saveBtn.Click()
 	require.NoError(t, err, "failed to click save button")
 
+	t.Logf("Waiting for item '%s' to appear in list...", name)
 	err = page.Locator(fmt.Sprintf("text=%s", name)).First().WaitFor()
 	require.NoError(t, err, "failed to see new item in the list after save")
+	t.Logf("Item '%s' found in list.", name)
 
 	closeBtn := page.Locator(`button[bitdialogclose][size="default"]`).First()
 	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
@@ -234,10 +263,12 @@ func BrowserCreateCard(t *testing.T, page playwright.Page, name, cardholderName,
 	addItemBtn := page.Locator("#newItemDropdown").First()
 	err := addItemBtn.WaitFor()
 	require.NoError(t, err, "Add item button not found")
+	t.Log("Clicking 'Add item' button...")
 	err = addItemBtn.Click()
 	require.NoError(t, err, "failed to click add item")
 
 	typeOption := page.Locator("button[role='menuitem']:has-text('Card'), a[role='menuitem']:has-text('Card')").First()
+	t.Log("Selecting 'Card' option...")
 	_ = typeOption.Click(playwright.LocatorClickOptions{
 		Timeout: playwright.Float(3000),
 	})
@@ -248,23 +279,29 @@ func BrowserCreateCard(t *testing.T, page playwright.Page, name, cardholderName,
 	})
 	require.NoError(t, err, "Item name input not found")
 
+	t.Logf("Filling item name: %s", name)
 	err = nameInput.Fill(name)
 	require.NoError(t, err, "failed to fill item name")
 
 	cardholderInput := page.Locator("input[formcontrolname='cardholderName']").First()
+	t.Logf("Filling cardholderName: %s", cardholderName)
 	err = cardholderInput.Fill(cardholderName)
 	require.NoError(t, err, "failed to fill cardholderName")
 
 	numberInput := page.Locator("input[formcontrolname='number']").First()
+	t.Logf("Filling number: %s", number)
 	err = numberInput.Fill(number)
 	require.NoError(t, err, "failed to fill number")
 
 	saveBtn := page.Locator("button:has-text('Save'), button[aria-label='Save']").First()
+	t.Log("Clicking 'Save' button...")
 	err = saveBtn.Click()
 	require.NoError(t, err, "failed to click save button")
 
+	t.Logf("Waiting for item '%s' to appear in list...", name)
 	err = page.Locator(fmt.Sprintf("text=%s", name)).First().WaitFor()
 	require.NoError(t, err, "failed to see new item in the list after save")
+	t.Logf("Item '%s' found in list.", name)
 
 	closeBtn := page.Locator(`button[bitdialogclose][size="default"]`).First()
 	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
@@ -280,6 +317,7 @@ func BrowserVerifyCipherData(t *testing.T, page playwright.Page, name string, ch
 	err := item.WaitFor()
 	require.NoError(t, err, "failed to wait for item to verify")
 
+	t.Logf("Clicking item '%s' to verify...", name)
 	err = item.Click()
 	require.NoError(t, err, "failed to click item to verify")
 
@@ -288,6 +326,7 @@ func BrowserVerifyCipherData(t *testing.T, page playwright.Page, name string, ch
 	editBtn := page.Locator("button:has-text('Edit'), button[aria-label='Edit']").First()
 	_ = editBtn.WaitFor(playwright.LocatorWaitForOptions{Timeout: playwright.Float(3000)})
 	if count, _ := editBtn.Count(); count > 0 {
+		t.Log("Clicking 'Edit' button...")
 		_ = editBtn.Click()
 	}
 
@@ -306,6 +345,7 @@ func BrowserVerifyCipherData(t *testing.T, page playwright.Page, name string, ch
 			val, err = locator.InputValue()
 		}
 		require.NoError(t, err, "failed to read value for %s", formControlName)
+		t.Logf("Verifying field '%s': expected '%s', got '%s'", formControlName, expectedVal, val)
 		require.Equal(t, expectedVal, val, "value mismatch for %s", formControlName)
 	}
 

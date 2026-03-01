@@ -255,7 +255,7 @@ func TestSharedCipherRotationBrowser(t *testing.T) {
 	t.Log("User2 verified shared cipher")
 	_ = page2.Context().Close()
 
-	// Verify User1 can see it
+	t.Log("Opening User1's browser context...")
 	newContext1, err := browser.NewContext(playwright.BrowserNewContextOptions{
 		IgnoreHttpsErrors: playwright.Bool(true),
 	})
@@ -281,6 +281,7 @@ func TestSharedCipherRotationBrowser(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// 7. Verify User1 can STILL see it after rotation
+	t.Log("Opening User1's browser context (after rotation)...")
 	newContext1Rotated, err := browser.NewContext(playwright.BrowserNewContextOptions{
 		IgnoreHttpsErrors: playwright.Bool(true),
 	})
