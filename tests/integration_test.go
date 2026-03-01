@@ -106,7 +106,6 @@ func TestSendLifecycle(t *testing.T) {
 		})
 		require.NoError(t, err, "Failed to find textarea for send text")
 
-		time.Sleep(1 * time.Second) // wait for angular to apply the value
 		val, err := textLoc.First().InputValue()
 		require.NoError(t, err)
 		if val != "secret content" {
@@ -173,8 +172,6 @@ func TestFileSendLifecycle(t *testing.T) {
 			require.NoError(t, err, "Failed to find download button")
 		}
 
-		time.Sleep(1 * time.Second) // let angular settle
-
 		download, err := page.ExpectDownload(func() error {
 			return btn.First().Click()
 		})
@@ -197,7 +194,6 @@ func TestFileSendLifecycle(t *testing.T) {
 	require.NoError(t, err, "DeleteSend")
 	t.Log("Send file lifecycle complete")
 }
-
 
 func TestAPIKeyLogin(t *testing.T) {
 	email := "test-apikey@example.com"
@@ -428,7 +424,6 @@ func TestEmergencyAccessLifecycle(t *testing.T) {
 		if trusted[0].Status == 1 { // ACCEPTED
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
 	}
 
 	err = grantorVault.ConfirmEmergencyAccess(eaID)
@@ -443,7 +438,6 @@ func TestEmergencyAccessLifecycle(t *testing.T) {
 		if granted[0].Status == 2 { // CONFIRMED
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
 	}
 
 	err = granteeVault.InitiateEmergencyAccess(eaID)
@@ -463,7 +457,6 @@ func TestEmergencyAccessLifecycle(t *testing.T) {
 		if granted[0].Status == 4 { // RECOVERY_APPROVED
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
 	}
 
 	grantorCiphers, err := granteeVault.ViewEmergencyVault(eaID)
