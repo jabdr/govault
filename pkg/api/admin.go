@@ -1,13 +1,11 @@
 package api
 
 import (
-	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"strings"
-	"sync"
 )
 
 // AdminUser represents a user returned by the Vaultwarden admin API.
@@ -36,7 +34,6 @@ type AdminClient struct {
 	baseURL    string
 	httpClient *http.Client
 	logger     *slog.Logger
-	mu         sync.RWMutex
 }
 
 // NewAdminClient creates a new admin API client for the given server URL.
@@ -58,16 +55,10 @@ func NewAdminClient(baseURL string, logger *slog.Logger) *AdminClient {
 	}
 }
 
-// SetInsecureSkipVerify enables bypassing TLS certificate verification.
+// SetInsecureSkipVerify configures TLS for the admin client.
+// It always enforces TLS 1.2 as minimum and optionally disables certificate verification.
 func (c *AdminClient) SetInsecureSkipVerify(skip bool) {
-	if skip {
-		t := http.DefaultTransport.(*http.Transport).Clone()
-		if t.TLSClientConfig == nil {
-			t.TLSClientConfig = &tls.Config{}
-		}
-		t.TLSClientConfig.InsecureSkipVerify = true
-		c.httpClient.Transport = t
-	}
+	c.httpClient.Transport = NewTLSTransport(skip)
 }
 
 // Login authenticates with the admin panel using the admin token.

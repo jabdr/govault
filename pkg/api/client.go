@@ -4,7 +4,6 @@ package api
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -44,16 +43,10 @@ func (c *Client) SetTokens(accessToken, refreshToken string) {
 	c.refreshToken = refreshToken
 }
 
-// SetInsecureSkipVerify enables bypassing TLS certificate verification.
+// SetInsecureSkipVerify configures TLS for the client.
+// It always enforces TLS 1.2 as minimum and optionally disables certificate verification.
 func (c *Client) SetInsecureSkipVerify(skip bool) {
-	if skip {
-		t := http.DefaultTransport.(*http.Transport).Clone()
-		if t.TLSClientConfig == nil {
-			t.TLSClientConfig = &tls.Config{}
-		}
-		t.TLSClientConfig.InsecureSkipVerify = true
-		c.httpClient.Transport = t
-	}
+	c.httpClient.Transport = NewTLSTransport(skip)
 }
 
 // BaseURL returns the configured base URL.

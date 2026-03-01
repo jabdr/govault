@@ -1,7 +1,6 @@
 package api
 
 import (
-	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -53,17 +52,12 @@ func NewPublicClient(baseURL string, logger *slog.Logger) *PublicClient {
 	}
 }
 
-// SetInsecureSkipVerify enables bypassing TLS certificate verification.
+// SetInsecureSkipVerify configures TLS for the public API client.
+// It always enforces TLS 1.2 as minimum and optionally disables certificate verification.
 func (p *PublicClient) SetInsecureSkipVerify(skip bool) {
-	if skip {
-		t := http.DefaultTransport.(*http.Transport).Clone()
-		if t.TLSClientConfig == nil {
-			t.TLSClientConfig = &tls.Config{}
-		}
-		t.TLSClientConfig.InsecureSkipVerify = true
-		p.httpClient.Transport = t
-		p.client.httpClient.Transport = t
-	}
+	t := NewTLSTransport(skip)
+	p.httpClient.Transport = t
+	p.client.httpClient.Transport = t
 }
 
 // Login authenticates with the Public API using organization client credentials.
