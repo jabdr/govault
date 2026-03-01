@@ -312,3 +312,51 @@ type APIKeyResult struct {
 func (a APIKeyResult) HumanString() string {
 	return fmt.Sprintf("Client ID: %s\nClient Secret: %s\n", a.ClientID, a.ClientSecret)
 }
+
+// AdminUserResult holds a user from the admin API for output.
+type AdminUserResult struct {
+	ID               string `json:"id" yaml:"id"`
+	Email            string `json:"email" yaml:"email"`
+	Name             string `json:"name,omitempty" yaml:"name,omitempty"`
+	Enabled          bool   `json:"enabled" yaml:"enabled"`
+	EmailVerified    bool   `json:"email_verified" yaml:"email_verified"`
+	TwoFactorEnabled bool   `json:"two_factor_enabled" yaml:"two_factor_enabled"`
+	CreatedAt        string `json:"created_at,omitempty" yaml:"created_at,omitempty"`
+	LastActive       string `json:"last_active,omitempty" yaml:"last_active,omitempty"`
+}
+
+func (u AdminUserResult) TableHeader() string {
+	return "ID\tEMAIL\tNAME\tENABLED\t2FA"
+}
+
+func (u AdminUserResult) TableRow() string {
+	return fmt.Sprintf("%s\t%s\t%s\t%t\t%t", u.ID, u.Email, u.Name, u.Enabled, u.TwoFactorEnabled)
+}
+
+func (u AdminUserResult) HumanString() string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "ID:       %s\n", u.ID)
+	fmt.Fprintf(&sb, "Email:    %s\n", u.Email)
+	if u.Name != "" {
+		fmt.Fprintf(&sb, "Name:     %s\n", u.Name)
+	}
+	fmt.Fprintf(&sb, "Enabled:  %t\n", u.Enabled)
+	fmt.Fprintf(&sb, "Verified: %t\n", u.EmailVerified)
+	fmt.Fprintf(&sb, "2FA:      %t\n", u.TwoFactorEnabled)
+	return sb.String()
+}
+
+// AdminOrgResult holds an organization from the admin API for output.
+type AdminOrgResult struct {
+	ID           string `json:"id" yaml:"id"`
+	Name         string `json:"name" yaml:"name"`
+	BillingEmail string `json:"billing_email,omitempty" yaml:"billing_email,omitempty"`
+}
+
+func (o AdminOrgResult) TableHeader() string {
+	return "ID\tNAME"
+}
+
+func (o AdminOrgResult) TableRow() string {
+	return fmt.Sprintf("%s\t%s", o.ID, o.Name)
+}

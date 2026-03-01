@@ -57,6 +57,7 @@ govault -o json cipher list
 - **Groups:** `govault group [list|create|delete]`
 - **Sends:** `govault send [list|create|get|delete]`
 - **Emergency Access:** `govault emergency [list-trusted|list-granted|invite|confirm|initiate|approve|reject|view|takeover]`
+- **Admin (Vaultwarden):** `govault admin user [list|get|invite|reinvite|disable|enable|deauth|remove-2fa|delete]` and `govault admin org [list|delete]`
 
 Add `--verbose` to any command for debug logging or `-o json/yaml` for structured output.
 
