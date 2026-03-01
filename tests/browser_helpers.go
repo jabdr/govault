@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/playwright-community/playwright-go"
 	"github.com/stretchr/testify/require"
@@ -25,13 +24,21 @@ func SetupPlaywright(t *testing.T) (*playwright.Playwright, playwright.Browser, 
 	pw, err := playwright.Run()
 	require.NoError(t, err, "could not start playwright")
 
-	// Check if running in CI to determine headless mode
-	headless := os.Getenv("CI") == "true"
-
-	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(headless),
-	})
-	require.NoError(t, err, "could not launch browser")
+	var browser playwright.Browser
+	cdpURL := os.Getenv("CDP_URL")
+	if cdpURL != "" {
+		t.Logf("Connecting to existing browser via CDP: %s", cdpURL)
+		browser, err = pw.Chromium.ConnectOverCDP(cdpURL)
+		require.NoError(t, err, "could not connect to browser via CDP")
+	} else {
+		// Check if running in CI to determine headless mode
+		headless := os.Getenv("CI") == "true"
+		t.Logf("Launching new Chromium instance (headless=%v)", headless)
+		browser, err = pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
+			Headless: playwright.Bool(headless),
+		})
+		require.NoError(t, err, "could not launch browser")
+	}
 
 	context, err := browser.NewContext(playwright.BrowserNewContextOptions{
 		IgnoreHttpsErrors: playwright.Bool(true),
@@ -83,14 +90,9 @@ func BrowserLogin(t *testing.T, page playwright.Page, serverURL, email, password
 	err = passwordInput.WaitFor()
 	require.NoError(t, err, "login password input not found")
 
-	// Small delay to allow transition animation to finish
-	time.Sleep(500 * time.Millisecond)
-
 	t.Logf("Filling password: %s", password)
 	err = passwordInput.Fill(password)
 	require.NoError(t, err, "failed to fill password")
-
-	time.Sleep(500 * time.Millisecond)
 
 	// Log in
 	t.Log("Clicking login button...")
@@ -187,9 +189,6 @@ func BrowserCreateCipher(t *testing.T, page playwright.Page, name, username, pas
 	closeBtn := page.Locator(`button[bitdialogclose][size="default"]`).First()
 	t.Log("Closing modal (if still open)...")
 	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
-
-	// Small delay to ensure DB write finishes
-	time.Sleep(1 * time.Second)
 }
 
 // BrowserCheckCipherExists verifies that a given cipher name is visible in the vault list.
@@ -252,8 +251,6 @@ func BrowserCreateSecureNote(t *testing.T, page playwright.Page, name, notes str
 
 	closeBtn := page.Locator(`button[bitdialogclose][size="default"]`).First()
 	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
-
-	time.Sleep(1 * time.Second)
 }
 
 // BrowserCreateCard creates a new card cipher through the web UI.
@@ -305,8 +302,6 @@ func BrowserCreateCard(t *testing.T, page playwright.Page, name, cardholderName,
 
 	closeBtn := page.Locator(`button[bitdialogclose][size="default"]`).First()
 	_ = closeBtn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(2000)})
-
-	time.Sleep(1 * time.Second)
 }
 
 // BrowserVerifyCipherData clicks an item, checks its inputs, and closes the modal
@@ -351,5 +346,4 @@ func BrowserVerifyCipherData(t *testing.T, page playwright.Page, name string, ch
 
 	closeBtn := page.Locator(`button[bitdialogclose][size="default"], button:has-text('Cancel')`).First()
 	_ = closeBtn.Click()
-	time.Sleep(1 * time.Second)
 }

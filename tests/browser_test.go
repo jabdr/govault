@@ -122,6 +122,8 @@ func TestPasswordRotationBrowser(t *testing.T) {
 
 	// 1. Setup server and register user
 	RegisterTestUser(t, testServer, email, password)
+	v := APILogin(t, testServer, email, password)
+	VerifyUserEmail(t, v, email)
 
 	// 2. Spin up Playwright page
 	_, browser, page := SetupPlaywright(t)
@@ -133,17 +135,14 @@ func TestPasswordRotationBrowser(t *testing.T) {
 	BrowserCreateSecureNote(t, page, "Rotation Note", "rot secret notes")
 	BrowserCreateCard(t, page, "Rotation Card", "John Doe", "1234567890123456")
 	t.Log("Created ciphers via UI")
-	time.Sleep(2 * time.Second) // wait for sync
 
 	// Close context to perform a clean login later
 	_ = page.Context().Close()
 
 	// 4. Change Password via API client
-	v := APILogin(t, testServer, email, password)
 	err := v.ChangePassword(password, newPassword, 0, 600000, 64, 4)
 	require.NoError(t, err, "ChangePassword should succeed")
 	t.Log("Rotated password via API")
-	time.Sleep(2 * time.Second) // wait slightly just in case
 
 	// 5. Open new browser context and login with NEW password
 	newContext, err := browser.NewContext(playwright.BrowserNewContextOptions{
@@ -157,9 +156,6 @@ func TestPasswordRotationBrowser(t *testing.T) {
 	require.NoError(t, err)
 
 	BrowserLogin(t, newPage, testServer, email, newPassword)
-
-	// 6. Verify cipher data in UI
-	time.Sleep(2 * time.Second) // wait for initialization of vault view
 
 	BrowserVerifyCipherData(t, newPage, "Rotation Login", map[string]string{
 		"username": "rotuser",
