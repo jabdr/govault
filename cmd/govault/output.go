@@ -49,13 +49,17 @@ func printOutput(data any) {
 
 // printList serializes a slice of items to the selected format and writes to stdout.
 func printList[T any](items []T) {
+	if items == nil {
+		items = []T{}
+	}
+
 	switch outputFormat {
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(items)
+		_ = enc.Encode(map[string][]T{"items": items})
 	case "yaml":
-		out, err := yaml.Marshal(items)
+		out, err := yaml.Marshal(map[string][]T{"items": items})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: yaml marshal: %v\n", err)
 			os.Exit(1)
