@@ -2,6 +2,7 @@ package vault
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/jabdr/govault/pkg/api"
 	"github.com/jabdr/govault/pkg/crypto"
@@ -35,6 +36,53 @@ func (v *Vault) ListCollections(orgID string) ([]Collection, error) {
 			OrganizationID: col.OrganizationID,
 			Name:           name,
 			ExternalID:     col.ExternalID,
+		})
+	}
+	return collections, nil
+}
+
+// ListSyncCollections returns collections from the cached sync data for the
+// given organization, without making any API calls.
+func (v *Vault) ListSyncCollections(orgID string) ([]Collection, error) {
+	if v.syncData == nil {
+		return nil, fmt.Errorf("vault: no sync data available")
+	}
+
+	orgKey, err := v.GetOrgKey(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("vault: list sync collections: %w", err)
+	}
+
+	var collections []Collection
+	for _, raw := range v.syncData.Collections {
+		// Match by organization ID (case-insensitive)
+		colOrgID, _ := raw["organizationId"].(string)
+		if colOrgID == "" {
+			colOrgID, _ = raw["OrganizationId"].(string)
+		}
+		if !strings.EqualFold(colOrgID, orgID) {
+			continue
+		}
+
+		colID, _ := raw["id"].(string)
+		if colID == "" {
+			colID, _ = raw["Id"].(string)
+		}
+		encName, _ := raw["name"].(string)
+		if encName == "" {
+			encName, _ = raw["Name"].(string)
+		}
+		extID, _ := raw["externalId"].(string)
+		if extID == "" {
+			extID, _ = raw["ExternalId"].(string)
+		}
+
+		name := decryptString(encName, orgKey)
+		collections = append(collections, Collection{
+			ID:             colID,
+			OrganizationID: colOrgID,
+			Name:           name,
+			ExternalID:     extID,
 		})
 	}
 	return collections, nil

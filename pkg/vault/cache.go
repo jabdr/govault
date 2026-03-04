@@ -24,13 +24,23 @@ type CacheFile struct {
 }
 
 // SaveCache writes the current vault session to a file.
-// The file contains the access/refresh tokens and the sync payload.
+// The file contains the access/refresh tokens, KDF parameters, and the sync payload.
 func (v *Vault) SaveCache(path string) error {
+	// Fetch KDF parameters via prelogin
+	prelogin, err := v.client.Prelogin(v.email)
+	if err != nil {
+		return fmt.Errorf("vault: prelogin for cache: %w", err)
+	}
+
 	accessToken, refreshToken := v.client.GetTokens()
 	cf := CacheFile{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		SyncData:     v.syncData,
+		AccessToken:    accessToken,
+		RefreshToken:   refreshToken,
+		Kdf:            prelogin.Kdf,
+		KdfIterations:  prelogin.KdfIterations,
+		KdfMemory:      prelogin.KdfMemory,
+		KdfParallelism: prelogin.KdfParallelism,
+		SyncData:       v.syncData,
 	}
 	data, err := json.MarshalIndent(cf, "", "  ")
 	if err != nil {

@@ -135,9 +135,19 @@ func runCacheCipherGet(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	c, err := cachedVault.GetCipher(id)
+	ciphers, err := cachedVault.ListCiphers()
 	if err != nil {
 		return err
+	}
+	var c *vault.Cipher
+	for _, ci := range ciphers {
+		if ci.ID() == id {
+			c = ci
+			break
+		}
+	}
+	if c == nil {
+		return fmt.Errorf("cipher %s not found in cache", id)
 	}
 	result := CipherResult{
 		ID:   c.ID(),
@@ -166,7 +176,7 @@ func runCacheCollectionList(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	orgID := cmd.String("org-id")
-	cols, err := cachedVault.ListCollections(orgID)
+	cols, err := cachedVault.ListSyncCollections(orgID)
 	if err != nil {
 		return err
 	}
