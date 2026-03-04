@@ -6,8 +6,10 @@ package vault
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/jabdr/govault/pkg/api"
@@ -117,52 +119,51 @@ func New(opts ...VaultOption) (*Vault, error) {
 	client := api.NewClient(o.serverURL, logger)
 	client.SetInsecureSkipVerify(o.insecure)
 
-	// ── 1. Derive master key and password hash ──────────────────────────
-	//
-	// In offline mode (useSyncData), the KDF parameters come from the
-	// cache file so no server round-trip is needed. In online mode they
-	// come from a prelogin call.
-	var prelogin *api.PreloginResponse
+	var masterKey []byte
+	var passwordHash string
+	authenticated := false
 
-	if o.cacheFile != "" && o.useSyncData {
-		// Read KDF params from the cache file header
+	// ── 1. Try cache tokens first (KDF params come from cache file) ──
+	if o.cacheFile != "" {
 		cf, err := readCacheFile(o.cacheFile)
-		if err != nil {
+		if err != nil && (o.useSyncData || !errors.Is(err, os.ErrNotExist)) {
 			return nil, err
 		}
-		prelogin = &api.PreloginResponse{
-			Kdf:            cf.Kdf,
-			KdfIterations:  cf.KdfIterations,
-			KdfMemory:      cf.KdfMemory,
-			KdfParallelism: cf.KdfParallelism,
+		if cf != nil {
+			prelogin := &api.PreloginResponse{
+				Kdf:            cf.Kdf,
+				KdfIterations:  cf.KdfIterations,
+				KdfMemory:      cf.KdfMemory,
+				KdfParallelism: cf.KdfParallelism,
+			}
+			masterKey, passwordHash, err = deriveKeys(o.password, email, prelogin)
+			if err != nil {
+				return nil, err
+			}
+
+			if tokErr := applyCacheTokens(client, o.cacheFile, masterKey, logger); tokErr != nil {
+				logger.Warn("cache tokens not usable, will login normally", "error", tokErr)
+			} else {
+				authenticated = true
+				logger.Info("using tokens from cache file")
+			}
 		}
-	} else {
-		var err error
-		prelogin, err = client.Prelogin(email)
+	}
+
+	// ── 2. If cache didn't work, do prelogin + login ────────────────────
+	if !authenticated && !o.useSyncData {
+		// Prelogin to get KDF params (only when a login is required)
+		prelogin, err := client.Prelogin(email)
 		if err != nil {
 			return nil, fmt.Errorf("vault: prelogin: %w", err)
 		}
-	}
-	logger.Info("prelogin complete", "kdf", prelogin.Kdf, "iterations", prelogin.KdfIterations)
+		logger.Info("prelogin complete", "kdf", prelogin.Kdf, "iterations", prelogin.KdfIterations)
 
-	masterKey, passwordHash, err := deriveKeys(o.password, email, prelogin)
-	if err != nil {
-		return nil, err
-	}
-
-	// ── 2. Authenticate — prefer cache tokens, then API key, then login ─
-	authenticated := false
-
-	if o.cacheFile != "" {
-		if tokErr := applyCacheTokens(client, o.cacheFile, masterKey, logger); tokErr != nil {
-			logger.Warn("cache tokens not usable, will login normally", "error", tokErr)
-		} else {
-			authenticated = true
-			logger.Info("using tokens from cache file")
+		masterKey, passwordHash, err = deriveKeys(o.password, email, prelogin)
+		if err != nil {
+			return nil, err
 		}
-	}
 
-	if !authenticated && !o.useSyncData {
 		if o.clientID != "" && o.clientSecret != "" {
 			if _, err := client.LoginWithAPIKey(o.clientID, o.clientSecret, "govault-device"); err != nil {
 				return nil, fmt.Errorf("vault: login api key: %w", err)
@@ -185,13 +186,21 @@ func New(opts ...VaultOption) (*Vault, error) {
 				logger.Info("re-authenticated via refresh token")
 				return nil
 			}
-			// Fall back to full login
+			// Refresh failed — do a full prelogin + login
+			prelogin, err := client.Prelogin(email)
+			if err != nil {
+				return fmt.Errorf("vault: re-login prelogin: %w", err)
+			}
+			_, reloginHash, err := deriveKeys(o.password, email, prelogin)
+			if err != nil {
+				return fmt.Errorf("vault: re-login derive keys: %w", err)
+			}
 			if o.clientID != "" && o.clientSecret != "" {
 				if _, err := client.LoginWithAPIKey(o.clientID, o.clientSecret, "govault-device"); err != nil {
 					return fmt.Errorf("vault: re-login api key: %w", err)
 				}
 			} else {
-				if _, err := client.Login(email, passwordHash, "govault-device"); err != nil {
+				if _, err := client.Login(email, reloginHash, "govault-device"); err != nil {
 					return fmt.Errorf("vault: re-login: %w", err)
 				}
 			}
@@ -201,7 +210,10 @@ func New(opts ...VaultOption) (*Vault, error) {
 	}
 
 	// ── 4. Load sync data ───────────────────────────────────────────────
-	var syncData *api.SyncResponse
+	var (
+		syncData *api.SyncResponse
+		err      error
+	)
 
 	if o.cacheFile != "" && o.useSyncData {
 		// Offline mode: load sync data from the cache file
