@@ -56,7 +56,29 @@ func getCacheFile(cmd *cli.Command) (string, error) {
 	return cacheFile, nil
 }
 
-// getOfflineClient builds an offline vault from the cache file.
+// buildVaultOpts returns vault.Option values derived from the AppContext
+// and CLI root flags, including credentials, API key, and cache file.
+func buildVaultOpts(appCtx *AppContext, cmd *cli.Command) []vault.VaultOption {
+	opts := []vault.VaultOption{
+		vault.WithServer(appCtx.Server),
+		vault.WithCredentials(appCtx.Email, appCtx.Password),
+		vault.WithInsecure(appCtx.Insecure),
+		vault.WithLogger(appCtx.Logger),
+	}
+	clientID := cmd.Root().String("client-id")
+	clientSecret := cmd.Root().String("client-secret")
+	if clientID != "" && clientSecret != "" {
+		opts = append(opts, vault.WithAPIKey(clientID, clientSecret))
+	}
+	cacheFile := cmd.Root().String("cache-file")
+	if cacheFile != "" {
+		opts = append(opts, vault.WithCacheFile(cacheFile))
+	}
+	return opts
+}
+
+// getOfflineClient builds an offline vault from the cache file
+// using vault.New with WithSyncData.
 func getOfflineClient(ctx context.Context, cmd *cli.Command) (*vault.Vault, error) {
 	cacheFile, err := getCacheFile(cmd)
 	if err != nil {
@@ -69,7 +91,13 @@ func getOfflineClient(ctx context.Context, cmd *cli.Command) (*vault.Vault, erro
 	if appCtx.Email == "" || appCtx.Password == "" {
 		return nil, fmt.Errorf("email and password are required for offline cache access")
 	}
-	return vault.LoadCache(cacheFile, appCtx.Email, appCtx.Password, appCtx.Insecure, appCtx.Logger)
+	return vault.New(
+		vault.WithCredentials(appCtx.Email, appCtx.Password),
+		vault.WithInsecure(appCtx.Insecure),
+		vault.WithLogger(appCtx.Logger),
+		vault.WithCacheFile(cacheFile),
+		vault.WithSyncData(),
+	)
 }
 
 func runCacheSync(ctx context.Context, cmd *cli.Command) error {
@@ -82,18 +110,8 @@ func runCacheSync(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	// The cache sync command needs a live vault connection, so we login here.
-	var v *vault.Vault
-	clientID := cmd.Root().String("client-id")
-	clientSecret := cmd.Root().String("client-secret")
-
-	if clientID != "" && clientSecret != "" {
-		v, err = vault.LoginAPIKey(appCtx.Server, clientID, clientSecret, appCtx.Email, appCtx.Password, appCtx.Insecure, appCtx.Logger)
-	} else if appCtx.Email != "" && appCtx.Password != "" {
-		v, err = vault.Login(appCtx.Server, appCtx.Email, appCtx.Password, appCtx.Insecure, appCtx.Logger)
-	} else {
-		return fmt.Errorf("credentials are required for cache sync")
-	}
+	opts := buildVaultOpts(appCtx, cmd)
+	v, err := vault.New(opts...)
 	if err != nil {
 		return err
 	}

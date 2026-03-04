@@ -95,6 +95,96 @@ func kekFromMasterKey(masterKey []byte) (*crypto.SymmetricKey, error) {
 	return kek, nil
 }
 
+// readCacheFile reads and parses only the JSON envelope of a cache file.
+func readCacheFile(path string) (*CacheFile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("vault: read cache: %w", err)
+	}
+	cf := &CacheFile{}
+	if err := json.Unmarshal(data, cf); err != nil {
+		return nil, fmt.Errorf("vault: unmarshal cache: %w", err)
+	}
+	return cf, nil
+}
+
+// openCacheKey reads a cache file and decrypts its cache key using
+// the provided master key.
+func openCacheKey(path string, masterKey []byte) (*CacheFile, *crypto.SymmetricKey, error) {
+	cf, err := readCacheFile(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	kek, err := kekFromMasterKey(masterKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	cacheKey, err := decryptCacheKey(cf.EncKey, kek)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cf, cacheKey, nil
+}
+
+// decryptCacheFields decrypts all encrypted fields in the cache file
+// using the given cache-payload key.
+func decryptCacheFields(cf *CacheFile, cacheKey *crypto.SymmetricKey) (accessToken, refreshToken string, syncData *api.SyncResponse, err error) {
+	accessToken, err = decryptField(cf.AccessToken, cacheKey)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("vault: decrypt access token: %w", err)
+	}
+	refreshToken, err = decryptField(cf.RefreshToken, cacheKey)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("vault: decrypt refresh token: %w", err)
+	}
+	if cf.SyncData != "" {
+		syncJSON, err := decryptField(cf.SyncData, cacheKey)
+		if err != nil {
+			return "", "", nil, fmt.Errorf("vault: decrypt sync data: %w", err)
+		}
+		syncData = &api.SyncResponse{}
+		if err := json.Unmarshal([]byte(syncJSON), syncData); err != nil {
+			return "", "", nil, fmt.Errorf("vault: unmarshal sync data: %w", err)
+		}
+	}
+	return accessToken, refreshToken, syncData, nil
+}
+
+// applyCacheTokens reads an encrypted cache file, decrypts the access
+// and refresh tokens using the master key, and sets them on the API client.
+// This is used by vault.New() to bootstrap token-based auth from a cache.
+func applyCacheTokens(client *api.Client, path string, masterKey []byte, logger *slog.Logger) error {
+	cf, cacheKey, err := openCacheKey(path, masterKey)
+	if err != nil {
+		return err
+	}
+	accessToken, refreshToken, _, err := decryptCacheFields(cf, cacheKey)
+	if err != nil {
+		return err
+	}
+	client.SetTokens(accessToken, refreshToken)
+	logger.Info("applied cache tokens")
+	return nil
+}
+
+// loadCacheSyncData reads an encrypted cache file and returns just the
+// sync data, decrypted with the master key. Used by vault.New() with
+// WithSyncData() for offline mode.
+func loadCacheSyncData(path string, masterKey []byte) (*api.SyncResponse, error) {
+	cf, cacheKey, err := openCacheKey(path, masterKey)
+	if err != nil {
+		return nil, err
+	}
+	_, _, syncData, err := decryptCacheFields(cf, cacheKey)
+	if err != nil {
+		return nil, err
+	}
+	if syncData == nil {
+		return nil, fmt.Errorf("vault: cache file has no sync data")
+	}
+	return syncData, nil
+}
+
 // SaveCache writes the current vault session to an encrypted cache file.
 //
 // A random symmetric key is generated and used to encrypt the access
@@ -170,135 +260,23 @@ func (v *Vault) SaveCache(path string) error {
 	return nil
 }
 
-// readCacheFile reads and parses only the JSON envelope of a cache file.
-func readCacheFile(path string) (*CacheFile, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("vault: read cache: %w", err)
-	}
-	cf := &CacheFile{}
-	if err := json.Unmarshal(data, cf); err != nil {
-		return nil, fmt.Errorf("vault: unmarshal cache: %w", err)
-	}
-	return cf, nil
-}
-
-// decryptCacheFields decrypts all encrypted fields in the cache file
-// using the given cache-payload key.
-func decryptCacheFields(cf *CacheFile, cacheKey *crypto.SymmetricKey) (accessToken, refreshToken string, syncData *api.SyncResponse, err error) {
-	accessToken, err = decryptField(cf.AccessToken, cacheKey)
-	if err != nil {
-		return "", "", nil, fmt.Errorf("vault: decrypt access token: %w", err)
-	}
-	refreshToken, err = decryptField(cf.RefreshToken, cacheKey)
-	if err != nil {
-		return "", "", nil, fmt.Errorf("vault: decrypt refresh token: %w", err)
-	}
-	if cf.SyncData != "" {
-		syncJSON, err := decryptField(cf.SyncData, cacheKey)
-		if err != nil {
-			return "", "", nil, fmt.Errorf("vault: decrypt sync data: %w", err)
-		}
-		syncData = &api.SyncResponse{}
-		if err := json.Unmarshal([]byte(syncJSON), syncData); err != nil {
-			return "", "", nil, fmt.Errorf("vault: unmarshal sync data: %w", err)
-		}
-	}
-	return accessToken, refreshToken, syncData, nil
-}
-
-// LoadCacheTokens reads an encrypted cache file and applies only the
-// access/refresh tokens to an existing vault client. It uses the vault's
-// existing master key (no password required).
-func (v *Vault) LoadCacheTokens(path string) error {
-	cf, err := readCacheFile(path)
-	if err != nil {
-		return err
-	}
-
-	kek, err := kekFromMasterKey(v.masterKey)
-	if err != nil {
-		return err
-	}
-	cacheKey, err := decryptCacheKey(cf.EncKey, kek)
-	if err != nil {
-		return err
-	}
-
-	accessToken, refreshToken, _, err := decryptCacheFields(cf, cacheKey)
-	if err != nil {
-		return err
-	}
-	v.client.SetTokens(accessToken, refreshToken)
-	return nil
-}
-
 // LoadCache reads an encrypted cache file and constructs an offline vault
-// from it. The returned vault has the sync data loaded and encryption
-// keys set up but cannot make API calls (it has no server connection).
+// from it. This is a convenience wrapper around New() with WithSyncData().
 func LoadCache(path, email, password string, insecure bool, logger *slog.Logger) (*Vault, error) {
-	if logger == nil {
-		logger = slog.Default()
-	}
-
-	cf, err := readCacheFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	// Derive the master key from the user's credentials
-	prelogin := &api.PreloginResponse{
-		Kdf:            cf.Kdf,
-		KdfIterations:  cf.KdfIterations,
-		KdfMemory:      cf.KdfMemory,
-		KdfParallelism: cf.KdfParallelism,
-	}
-	masterKey, passwordHash, err := deriveKeys(password, email, prelogin)
-	if err != nil {
-		return nil, err
-	}
-
-	// Decrypt the cache
-	kek, err := kekFromMasterKey(masterKey)
-	if err != nil {
-		return nil, err
-	}
-	cacheKey, err := decryptCacheKey(cf.EncKey, kek)
-	if err != nil {
-		return nil, err
-	}
-	accessToken, refreshToken, syncData, err := decryptCacheFields(cf, cacheKey)
-	if err != nil {
-		return nil, err
-	}
-	if syncData == nil {
-		return nil, fmt.Errorf("vault: cache file has no sync data")
-	}
-
-	// Build the vault from cached sync data
-	client := api.NewClient("", logger)
-	client.SetInsecureSkipVerify(insecure)
-	client.SetTokens(accessToken, refreshToken)
-
-	return newVault(client, email, masterKey, passwordHash,
-		syncData.Profile.Key, syncData.Profile.PrivateKey,
-		syncData, logger)
+	return New(
+		WithCredentials(email, password),
+		WithInsecure(insecure),
+		WithLogger(logger),
+		WithCacheFile(path),
+		WithSyncData(),
+	)
 }
 
 // LoadCacheListOnly reads an encrypted cache file and constructs a vault
 // clone that uses the sync data from the cache but the encryption keys
 // from the current vault instance.
 func (v *Vault) LoadCacheListOnly(path string) (*Vault, error) {
-	cf, err := readCacheFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	kek, err := kekFromMasterKey(v.masterKey)
-	if err != nil {
-		return nil, err
-	}
-	cacheKey, err := decryptCacheKey(cf.EncKey, kek)
+	cf, cacheKey, err := openCacheKey(path, v.masterKey)
 	if err != nil {
 		return nil, err
 	}

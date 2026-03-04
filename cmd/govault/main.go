@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -110,7 +109,7 @@ func main() {
 }
 
 // runBefore is the global Before hook that sets up logging, parses flags,
-// and initialises the vault client. It stores everything in AppContext.
+// and initialises the vault client via the option pattern.
 func runBefore(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 	outputFormat = cmd.String("output")
 	verbose := cmd.Bool("verbose")
@@ -127,8 +126,6 @@ func runBefore(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 	server := cmd.String("server")
 	email := cmd.String("email")
 	password := cmd.String("password")
-	clientID := cmd.String("client-id")
-	clientSecret := cmd.String("client-secret")
 	insecureSkipVerify := cmd.Bool("insecure-skip-verify")
 
 	appCtx := &AppContext{
@@ -145,17 +142,10 @@ func runBefore(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 		return SetAppCtx(ctx, appCtx), nil
 	}
 
-	var v *vault.Vault
-	var err error
+	// Build vault options
+	opts := buildVaultOpts(appCtx, cmd)
 
-	if clientID != "" && clientSecret != "" {
-		v, err = vault.LoginAPIKey(server, clientID, clientSecret, email, password, insecureSkipVerify, logger)
-	} else if email != "" && password != "" {
-		v, err = vault.Login(server, email, password, insecureSkipVerify, logger)
-	} else {
-		err = fmt.Errorf("missing credentials")
-	}
-
+	v, err := vault.New(opts...)
 	if err != nil {
 		return ctx, err
 	}

@@ -21,6 +21,7 @@ type Client struct {
 	refreshToken string
 	logger       *slog.Logger
 	mu           sync.RWMutex
+	reauthFunc   func() error // callback for re-authentication
 }
 
 // NewClient creates a new API client for the given server URL.
@@ -50,6 +51,16 @@ func (c *Client) GetTokens() (accessToken, refreshToken string) {
 	return c.accessToken, c.refreshToken
 }
 
+// SetReauthFunc sets a callback that the client will invoke when an API
+// call receives an HTTP 401 Unauthorized response. The callback should
+// attempt to re-authenticate (e.g. via refresh token or full re-login)
+// so that the request can be retried with a valid access token.
+func (c *Client) SetReauthFunc(fn func() error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reauthFunc = fn
+}
+
 // SetInsecureSkipVerify configures TLS for the client.
 // It always enforces TLS 1.2 as minimum and optionally disables certificate verification.
 func (c *Client) SetInsecureSkipVerify(skip bool) {
@@ -67,6 +78,36 @@ func (c *Client) doRequest(method, path string, body any, result any) error {
 }
 
 func (c *Client) doRequestRaw(method, path, contentType string, body any, result any) error {
+	err := c.doRequestOnce(method, path, contentType, body, result)
+	if err == nil {
+		return nil
+	}
+
+	// If we got a 401 and have a reauth callback, try to re-authenticate and retry
+	apiErr, ok := err.(*APIError)
+	if !ok || apiErr.StatusCode != 401 {
+		return err
+	}
+
+	c.mu.RLock()
+	reauth := c.reauthFunc
+	c.mu.RUnlock()
+
+	if reauth == nil {
+		return err
+	}
+
+	c.logger.Info("received 401, attempting re-authentication")
+	if reauthErr := reauth(); reauthErr != nil {
+		return fmt.Errorf("api: re-authentication failed: %w (original: %w)", reauthErr, err)
+	}
+
+	// Retry the original request
+	return c.doRequestOnce(method, path, contentType, body, result)
+}
+
+// doRequestOnce performs a single HTTP request without retry.
+func (c *Client) doRequestOnce(method, path, contentType string, body any, result any) error {
 	url := c.baseURL + path
 
 	var bodyReader io.Reader
