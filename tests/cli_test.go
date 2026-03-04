@@ -280,6 +280,59 @@ func TestCLICipherLifecycle(t *testing.T) {
 }
 
 // ==========================================================================
+// CIPHER IN COLLECTION TESTS
+// ==========================================================================
+
+func TestCLICipherInCollection(t *testing.T) {
+	t.Parallel()
+	email, password := setupCLIUser(t)
+
+	// 1. Create an organization with a default collection
+	orgName := fmt.Sprintf("CipherCol Org %d", time.Now().UnixNano())
+	t.Log("Step: create org for collection cipher")
+	out := runCLI(t, email, password, "org", "create",
+		"--name", orgName,
+		"--billing-email", email,
+		"--collection-name", "TestCol",
+	)
+	var orgMsg cliMessage
+	require.NoError(t, json.Unmarshal(out, &orgMsg), "parse org create: %s", string(out))
+	orgID := orgMsg.ID
+
+	// 2. List collections to get the collection ID
+	t.Log("Step: list collections")
+	out = runCLI(t, email, password, "collection", "list", "--org-id", orgID)
+	var colList cliCollectionList
+	require.NoError(t, json.Unmarshal(out, &colList), "parse collection list: %s", string(out))
+	require.NotEmpty(t, colList.Items, "should have at least one collection")
+	colID := colList.Items[0].ID
+
+	// 3. Create a cipher in the collection
+	t.Log("Step: create cipher in collection")
+	out = runCLI(t, email, password, "cipher", "create",
+		"--name", "Collection Cipher",
+		"--org-id", orgID,
+		"--collection-id", colID,
+		"--login-username", "coluser",
+		"--login-password", "colpass",
+	)
+	var cipherMsg cliMessage
+	require.NoError(t, json.Unmarshal(out, &cipherMsg), "parse cipher create: %s", string(out))
+	require.NotEmpty(t, cipherMsg.ID)
+	cipherID := cipherMsg.ID
+	t.Logf("Created cipher in collection: %s", cipherID)
+
+	// 4. Get the cipher and verify it's readable (org key decryption works)
+	t.Log("Step: get cipher from collection")
+	out = runCLI(t, email, password, "cipher", "get", cipherID)
+	var gotCipher cliCipher
+	require.NoError(t, json.Unmarshal(out, &gotCipher), "parse cipher get: %s", string(out))
+	assert.Equal(t, "Collection Cipher", gotCipher.Name)
+	assert.Equal(t, "coluser", gotCipher.Username)
+	assert.Equal(t, "colpass", gotCipher.Password)
+}
+
+// ==========================================================================
 // FOLDER TESTS
 // ==========================================================================
 

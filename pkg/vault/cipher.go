@@ -60,6 +60,43 @@ func (c *Cipher) OrganizationID() string {
 	return id
 }
 
+// SetOrganizationID assigns the cipher to an organization.
+func (c *Cipher) SetOrganizationID(id string) {
+	if id == "" {
+		delete(c.data, "organizationId")
+	} else {
+		c.data["organizationId"] = id
+	}
+}
+
+// CollectionIDs returns the cipher's collection IDs.
+func (c *Cipher) CollectionIDs() []string {
+	raw, ok := c.data["collectionIds"].([]any)
+	if !ok {
+		return nil
+	}
+	ids := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s, ok := v.(string); ok {
+			ids = append(ids, s)
+		}
+	}
+	return ids
+}
+
+// SetCollectionIDs assigns the cipher to one or more collections.
+func (c *Cipher) SetCollectionIDs(ids []string) {
+	if len(ids) == 0 {
+		delete(c.data, "collectionIds")
+		return
+	}
+	raw := make([]any, len(ids))
+	for i, id := range ids {
+		raw[i] = id
+	}
+	c.data["collectionIds"] = raw
+}
+
 // FolderID returns the cipher's folder ID or empty string.
 func (c *Cipher) FolderID() string {
 	id, _ := c.data["folderId"].(string)

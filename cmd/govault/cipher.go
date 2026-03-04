@@ -35,6 +35,8 @@ func cipherCmd() *cli.Command {
 					&cli.StringFlag{Name: "login-password", Usage: "Login password"},
 					&cli.StringSliceFlag{Name: "url", Usage: "Login URLs (can be specified multiple times)"},
 					&cli.StringSliceFlag{Name: "field", Usage: "Custom fields (format: Name=Value)"},
+					&cli.StringFlag{Name: "org-id", Usage: "Organization ID (required for collection assignment)"},
+					&cli.StringSliceFlag{Name: "collection-id", Usage: "Collection IDs (can be specified multiple times, requires --org-id)"},
 				},
 				Action: runCipherCreate,
 			},
@@ -122,10 +124,33 @@ func runCipherCreate(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	v := appCtx.Client
-	c, err := vault.NewCipher(cmd.Int("type"), cmd.String("name"), v.SymmetricKey())
+
+	// Determine encryption key: org key if --org-id is set, user key otherwise.
+	orgID := cmd.String("org-id")
+	collectionIDs := cmd.StringSlice("collection-id")
+
+	if len(collectionIDs) > 0 && orgID == "" {
+		return fmt.Errorf("--org-id is required when using --collection-id")
+	}
+
+	var encKey = v.SymmetricKey()
+	if orgID != "" {
+		encKey, err = v.GetOrgKey(orgID)
+		if err != nil {
+			return fmt.Errorf("cannot get org key: %w", err)
+		}
+	}
+
+	c, err := vault.NewCipher(cmd.Int("type"), cmd.String("name"), encKey)
 	if err != nil {
 		return err
 	}
+
+	if orgID != "" {
+		c.SetOrganizationID(orgID)
+		c.SetCollectionIDs(collectionIDs)
+	}
+
 	if cmd.IsSet("notes") {
 		if err := c.SetNotes(cmd.String("notes")); err != nil {
 			return err

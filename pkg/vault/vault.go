@@ -513,8 +513,10 @@ func (v *Vault) GetCipher(id string) (*Cipher, error) {
 }
 
 // CreateCipher encrypts and creates a new cipher.
+// If the cipher has an organization ID, it is encrypted with the org key.
 func (v *Vault) CreateCipher(c *Cipher) error {
-	encrypted, err := c.Encrypt(v.symKey)
+	key := v.keyForCipher(c.Raw())
+	encrypted, err := c.Encrypt(key)
 	if err != nil {
 		return fmt.Errorf("vault: encrypt cipher: %w", err)
 	}
