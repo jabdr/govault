@@ -164,11 +164,3 @@ func runBefore(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 
 	return SetAppCtx(ctx, appCtx), nil
 }
-
-// exitOnErr prints the error and exits.
-func exitOnErr(err error) {
-	if err != nil {
-		printError(err)
-		os.Exit(1)
-	}
-}
