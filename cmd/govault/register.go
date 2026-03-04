@@ -18,25 +18,26 @@ func registerCmd() *cli.Command {
 			&cli.IntFlag{Name: "kdf-memory", Value: 64, Usage: "KDF memory in MB (Argon2id only)"},
 			&cli.IntFlag{Name: "kdf-parallelism", Value: 4, Usage: "KDF parallelism (Argon2id only)"},
 		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			appCtx, err := GetAppCtx(ctx)
-			if err != nil {
-				return err
-			}
-			_ = appCtx.Client
-			password := appCtx.Password
-			email := cmd.Root().String("email")
-			if appCtx.Server == "" || email == "" || password == "" {
-				return fmt.Errorf("server, email, and password are required")
-			}
-			err = vault.Register(appCtx.Server, email, password, int(cmd.Int("kdf")), int(cmd.Int("kdf-iterations")), int(cmd.Int("kdf-memory")), int(cmd.Int("kdf-parallelism")), appCtx.Insecure, appCtx.Logger)
-			if err != nil {
-				return err
-			}
-			printOutput(MessageResult{Message: fmt.Sprintf("Account %s successfully registered", email)})
-			return nil
-		},
+		Action: runRegister,
 	}
+}
+
+func runRegister(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	if appCtx.Server == "" || appCtx.Email == "" || appCtx.Password == "" {
+		return fmt.Errorf("server, email, and password are required")
+	}
+	if err := vault.Register(appCtx.Server, appCtx.Email, appCtx.Password,
+		int(cmd.Int("kdf")), int(cmd.Int("kdf-iterations")),
+		int(cmd.Int("kdf-memory")), int(cmd.Int("kdf-parallelism")),
+		appCtx.Insecure, appCtx.Logger); err != nil {
+		return err
+	}
+	printOutput(MessageResult{Message: fmt.Sprintf("Account %s successfully registered", appCtx.Email)})
+	return nil
 }
 
 func cipherTypeName(typ int) string {

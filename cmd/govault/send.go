@@ -15,20 +15,7 @@ func sendCmd() *cli.Command {
 		Name:  "send",
 		Usage: "Manage sends",
 		Commands: []*cli.Command{
-			{
-				Name:  "list",
-				Usage: "List sends",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					actionSends(vClient)
-					return nil
-				},
-			},
+			{Name: "list", Usage: "List sends", Action: runSendList},
 			{
 				Name:  "create",
 				Usage: "Create a send",
@@ -37,106 +24,91 @@ func sendCmd() *cli.Command {
 					&cli.StringFlag{Name: "text", Usage: "Send text content"},
 					&cli.StringFlag{Name: "file", Usage: "Path to file to upload"},
 				},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					actionSendCreate(vClient, cmd.String("name"), cmd.String("text"), cmd.String("file"))
-					return nil
-				},
+				Action: runSendCreate,
 			},
-			{
-				Name:  "get",
-				Usage: "Get a send by ID",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					id := cmd.Args().First()
-					if id == "" {
-						return fmt.Errorf("send ID is required")
-					}
-					actionSendGet(vClient, id)
-					return nil
-				},
-			},
-			{
-				Name:  "delete",
-				Usage: "Delete a send",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					id := cmd.Args().First()
-					if id == "" {
-						return fmt.Errorf("send ID is required")
-					}
-					actionSendDelete(vClient, id)
-					return nil
-				},
-			},
+			{Name: "get", Usage: "Get a send by ID", Action: runSendGet},
+			{Name: "delete", Usage: "Delete a send", Action: runSendDelete},
 		},
 	}
 }
 
-func actionSends(v *vault.Vault) {
-	sends, err := v.ListSends()
-	exitOnErr(err)
+func runSendList(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	sends, err := appCtx.Client.ListSends()
+	if err != nil {
+		return err
+	}
 	results := make([]SendResult, 0, len(sends))
 	for _, s := range sends {
 		results = append(results, SendResult{
-			ID:             s.ID,
-			Name:           s.Name,
-			FileName:       s.FileName,
-			URL:            s.URL,
-			AccessCount:    s.AccessCount,
-			MaxAccessCount: s.MaxAccessCount,
+			ID: s.ID, Name: s.Name, FileName: s.FileName, URL: s.URL,
+			AccessCount: s.AccessCount, MaxAccessCount: s.MaxAccessCount,
 		})
 	}
 	printList(results)
+	return nil
 }
 
-func actionSendCreate(v *vault.Vault, name, text, filePath string) {
+func runSendCreate(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	v := appCtx.Client
+	text := cmd.String("text")
+	filePath := cmd.String("file")
+	name := cmd.String("name")
+
 	if text == "" && filePath == "" {
-		exitOnErr(fmt.Errorf("either --text or --file must be provided"))
+		return fmt.Errorf("either --text or --file must be provided")
 	}
 
 	var s *vault.Send
 	var accessURL string
-	var err error
 
 	if filePath != "" {
 		data, err := os.ReadFile(filePath)
-		exitOnErr(err)
+		if err != nil {
+			return err
+		}
 		fileName := filepath.Base(filePath)
 		if name == "" {
 			name = fileName
 		}
 		s, accessURL, err = v.CreateFileSend(name, fileName, data, vault.SendOptions{})
-		exitOnErr(err)
+		if err != nil {
+			return err
+		}
 	} else {
 		if name == "" {
 			name = "Text Send"
 		}
 		s, accessURL, err = v.CreateTextSend(name, text, vault.SendOptions{})
-		exitOnErr(err)
+		if err != nil {
+			return err
+		}
 	}
 
 	printOutput(MessageResult{Message: fmt.Sprintf("Created send: %s", s.ID), ID: s.ID, URL: accessURL})
+	return nil
 }
 
-func actionSendGet(v *vault.Vault, id string) {
-	sends, err := v.ListSends()
-	exitOnErr(err)
+func runSendGet(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	id := cmd.Args().First()
+	if id == "" {
+		return fmt.Errorf("send ID is required")
+	}
+	sends, err := appCtx.Client.ListSends()
+	if err != nil {
+		return err
+	}
 	var send *vault.Send
 	for _, s := range sends {
 		if s.ID == id {
@@ -146,23 +118,31 @@ func actionSendGet(v *vault.Vault, id string) {
 	}
 	if send == nil {
 		printOutput(MessageResult{Message: fmt.Sprintf("Send not found: %s", id)})
-		return
+		return nil
 	}
 	result := SendResult{
-		ID:          send.ID,
-		Name:        send.Name,
-		FileName:    send.FileName,
-		URL:         send.URL,
-		AccessCount: send.AccessCount,
+		ID: send.ID, Name: send.Name, FileName: send.FileName,
+		URL: send.URL, AccessCount: send.AccessCount,
 	}
 	if send.Type == vault.SendTypeText {
 		result.Text = send.Text
 	}
 	printOutput(result)
+	return nil
 }
 
-func actionSendDelete(v *vault.Vault, id string) {
-	err := v.DeleteSend(id)
-	exitOnErr(err)
+func runSendDelete(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	id := cmd.Args().First()
+	if id == "" {
+		return fmt.Errorf("send ID is required")
+	}
+	if err := appCtx.Client.DeleteSend(id); err != nil {
+		return err
+	}
 	printOutput(MessageResult{Message: fmt.Sprintf("Deleted send: %s", id), ID: id})
+	return nil
 }

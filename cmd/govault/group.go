@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jabdr/govault/pkg/vault"
 	"github.com/urfave/cli/v3"
 )
 
@@ -19,16 +18,7 @@ func groupCmd() *cli.Command {
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "org-id", Required: true, Usage: "Organization ID"},
 				},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					actionGroups(vClient, cmd.String("org-id"))
-					return nil
-				},
+				Action: runGroupList,
 			},
 			{
 				Name:  "create",
@@ -38,16 +28,7 @@ func groupCmd() *cli.Command {
 					&cli.StringFlag{Name: "name", Required: true, Usage: "Group Name"},
 					&cli.BoolFlag{Name: "access-all", Usage: "Access all collections"},
 				},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					actionGroupCreate(vClient, cmd.String("org-id"), cmd.String("name"), cmd.Bool("access-all"))
-					return nil
-				},
+				Action: runGroupCreate,
 			},
 			{
 				Name:  "update",
@@ -58,16 +39,7 @@ func groupCmd() *cli.Command {
 					&cli.StringFlag{Name: "name", Required: true, Usage: "Group Name"},
 					&cli.BoolFlag{Name: "access-all", Usage: "Access all collections"},
 				},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					actionGroupUpdate(vClient, cmd.String("org-id"), cmd.String("id"), cmd.String("name"), cmd.Bool("access-all"))
-					return nil
-				},
+				Action: runGroupUpdate,
 			},
 			{
 				Name:  "delete",
@@ -76,46 +48,59 @@ func groupCmd() *cli.Command {
 					&cli.StringFlag{Name: "org-id", Required: true, Usage: "Organization ID"},
 					&cli.StringFlag{Name: "id", Required: true, Usage: "Group ID or Name"},
 				},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					actionGroupDelete(vClient, cmd.String("org-id"), cmd.String("id"))
-					return nil
-				},
+				Action: runGroupDelete,
 			},
 		},
 	}
 }
 
-func actionGroups(v *vault.Vault, orgID string) {
-	groups, err := v.ListGroups(orgID)
-	exitOnErr(err)
-
+func runGroupList(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	groups, err := appCtx.Client.ListGroups(cmd.String("org-id"))
+	if err != nil {
+		return err
+	}
 	results := make([]GroupResult, 0, len(groups))
 	for _, g := range groups {
 		results = append(results, GroupResult{ID: g.ID, Name: g.Name, AccessAll: g.AccessAll})
 	}
 	if len(results) == 0 {
 		printOutput(MessageResult{Message: "No groups found."})
-		return
+		return nil
 	}
 	printList(results)
+	return nil
 }
 
-func actionGroupCreate(v *vault.Vault, orgID, name string, accessAll bool) {
-	grp, err := v.CreateGroup(orgID, name, accessAll)
-	exitOnErr(err)
+func runGroupCreate(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	grp, err := appCtx.Client.CreateGroup(cmd.String("org-id"), cmd.String("name"), cmd.Bool("access-all"))
+	if err != nil {
+		return err
+	}
 	printOutput(MessageResult{Message: fmt.Sprintf("Created Group: %s (ID: %s)", grp.Name, grp.ID), ID: grp.ID})
+	return nil
 }
 
-func actionGroupUpdate(v *vault.Vault, orgID, idOrName, name string, accessAll bool) {
-	groups, err := v.ListGroups(orgID)
-	exitOnErr(err)
+func runGroupUpdate(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	v := appCtx.Client
+	orgID := cmd.String("org-id")
+	idOrName := cmd.String("id")
 
+	groups, err := v.ListGroups(orgID)
+	if err != nil {
+		return err
+	}
 	groupID := idOrName
 	for _, g := range groups {
 		if g.Name == idOrName {
@@ -124,15 +109,26 @@ func actionGroupUpdate(v *vault.Vault, orgID, idOrName, name string, accessAll b
 		}
 	}
 
-	err = v.UpdateGroup(orgID, groupID, name, accessAll)
-	exitOnErr(err)
+	if err := v.UpdateGroup(orgID, groupID, cmd.String("name"), cmd.Bool("access-all")); err != nil {
+		return err
+	}
 	printOutput(MessageResult{Message: fmt.Sprintf("Updated Group: %s", groupID), ID: groupID})
+	return nil
 }
 
-func actionGroupDelete(v *vault.Vault, orgID, idOrName string) {
-	groups, err := v.ListGroups(orgID)
-	exitOnErr(err)
+func runGroupDelete(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	v := appCtx.Client
+	orgID := cmd.String("org-id")
+	idOrName := cmd.String("id")
 
+	groups, err := v.ListGroups(orgID)
+	if err != nil {
+		return err
+	}
 	groupID := idOrName
 	for _, g := range groups {
 		if g.Name == idOrName {
@@ -141,7 +137,9 @@ func actionGroupDelete(v *vault.Vault, orgID, idOrName string) {
 		}
 	}
 
-	err = v.DeleteGroup(orgID, groupID)
-	exitOnErr(err)
+	if err := v.DeleteGroup(orgID, groupID); err != nil {
+		return err
+	}
 	printOutput(MessageResult{Message: fmt.Sprintf("Deleted Group: %s", groupID), ID: groupID})
+	return nil
 }

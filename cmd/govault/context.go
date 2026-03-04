@@ -10,9 +10,10 @@ import (
 
 type appContextKey struct{}
 
-// AppContext holds the Vault client and any other global-level state
+// AppContext holds the Vault client and any other global-level state.
 type AppContext struct {
 	Client   *vault.Vault
+	Email    string
 	Password string
 	Server   string
 	Insecure bool
@@ -25,15 +26,6 @@ func GetAppCtx(ctx context.Context) (*AppContext, error) {
 		return appCtx, nil
 	}
 	return nil, fmt.Errorf("app context not found")
-}
-
-// GetAppClient directly retrieves the Vault client from context.
-func GetAppClient(ctx context.Context) (*vault.Vault, error) {
-	appCtx, err := GetAppCtx(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return appCtx.Client, nil
 }
 
 // SetAppCtx stores the AppContext into the given context.

@@ -43,6 +43,13 @@ func (c *Client) SetTokens(accessToken, refreshToken string) {
 	c.refreshToken = refreshToken
 }
 
+// GetTokens returns the current access and refresh tokens.
+func (c *Client) GetTokens() (accessToken, refreshToken string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.accessToken, c.refreshToken
+}
+
 // SetInsecureSkipVerify configures TLS for the client.
 // It always enforces TLS 1.2 as minimum and optionally disables certificate verification.
 func (c *Client) SetInsecureSkipVerify(skip bool) {

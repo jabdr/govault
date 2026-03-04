@@ -15,36 +15,14 @@ func cipherCmd() *cli.Command {
 		Usage: "Manage ciphers",
 		Commands: []*cli.Command{
 			{
-				Name:  "list",
-				Usage: "List ciphers",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					actionList(vClient)
-					return nil
-				},
+				Name:   "list",
+				Usage:  "List ciphers",
+				Action: runCipherList,
 			},
 			{
-				Name:  "get",
-				Usage: "Get a specific cipher by ID",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					id := cmd.Args().First()
-					if id == "" {
-						return fmt.Errorf("cipher ID is required")
-					}
-					actionGet(vClient, id)
-					return nil
-				},
+				Name:   "get",
+				Usage:  "Get a specific cipher by ID",
+				Action: runCipherGet,
 			},
 			{
 				Name:  "create",
@@ -58,16 +36,7 @@ func cipherCmd() *cli.Command {
 					&cli.StringSliceFlag{Name: "url", Usage: "Login URLs (can be specified multiple times)"},
 					&cli.StringSliceFlag{Name: "field", Usage: "Custom fields (format: Name=Value)"},
 				},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					actionCreate(vClient, cmd)
-					return nil
-				},
+				Action: runCipherCreate,
 			},
 			{
 				Name:  "update",
@@ -81,42 +50,26 @@ func cipherCmd() *cli.Command {
 					&cli.StringSliceFlag{Name: "url", Usage: "Login URLs (can be specified multiple times, replaces existing)"},
 					&cli.StringSliceFlag{Name: "field", Usage: "Custom fields to add (format: Name=Value)"},
 				},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					actionUpdate(vClient, cmd)
-					return nil
-				},
+				Action: runCipherUpdate,
 			},
 			{
-				Name:  "delete",
-				Usage: "Delete a cipher",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					appCtx, err := GetAppCtx(ctx)
-					if err != nil {
-						return err
-					}
-					vClient := appCtx.Client
-
-					id := cmd.Args().First()
-					if id == "" {
-						return fmt.Errorf("cipher ID is required")
-					}
-					actionDelete(vClient, id)
-					return nil
-				},
+				Name:   "delete",
+				Usage:  "Delete a cipher",
+				Action: runCipherDelete,
 			},
 		},
 	}
 }
 
-func actionList(v *vault.Vault) {
-	ciphers, err := v.ListCiphers()
-	exitOnErr(err)
+func runCipherList(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	ciphers, err := appCtx.Client.ListCiphers()
+	if err != nil {
+		return err
+	}
 	results := make([]CipherResult, 0, len(ciphers))
 	for _, c := range ciphers {
 		results = append(results, CipherResult{
@@ -126,11 +79,22 @@ func actionList(v *vault.Vault) {
 		})
 	}
 	printList(results)
+	return nil
 }
 
-func actionGet(v *vault.Vault, id string) {
-	c, err := v.GetCipher(id)
-	exitOnErr(err)
+func runCipherGet(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	id := cmd.Args().First()
+	if id == "" {
+		return fmt.Errorf("cipher ID is required")
+	}
+	c, err := appCtx.Client.GetCipher(id)
+	if err != nil {
+		return err
+	}
 	result := CipherResult{
 		ID:   c.ID(),
 		Name: c.Name(),
@@ -149,79 +113,121 @@ func actionGet(v *vault.Vault, id string) {
 		result.Notes = notes
 	}
 	printOutput(result)
+	return nil
 }
 
-func actionCreate(v *vault.Vault, cmd *cli.Command) {
-	c, err := vault.NewCipher(cmd.Int("type"), cmd.String("name"), v.SymmetricKey())
-	exitOnErr(err)
-
-	if cmd.IsSet("notes") {
-		exitOnErr(c.SetNotes(cmd.String("notes")))
+func runCipherCreate(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
 	}
-
+	v := appCtx.Client
+	c, err := vault.NewCipher(cmd.Int("type"), cmd.String("name"), v.SymmetricKey())
+	if err != nil {
+		return err
+	}
+	if cmd.IsSet("notes") {
+		if err := c.SetNotes(cmd.String("notes")); err != nil {
+			return err
+		}
+	}
 	if cmd.IsSet("login-username") {
-		exitOnErr(c.SetLoginUsername(cmd.String("login-username")))
+		if err := c.SetLoginUsername(cmd.String("login-username")); err != nil {
+			return err
+		}
 	}
 	if cmd.IsSet("login-password") {
-		exitOnErr(c.SetLoginPassword(cmd.String("login-password")))
+		if err := c.SetLoginPassword(cmd.String("login-password")); err != nil {
+			return err
+		}
 	}
 	if cmd.IsSet("url") {
-		exitOnErr(c.SetLoginURLs(cmd.StringSlice("url")))
+		if err := c.SetLoginURLs(cmd.StringSlice("url")); err != nil {
+			return err
+		}
 	}
-
 	if cmd.IsSet("field") {
 		for _, field := range cmd.StringSlice("field") {
 			parts := strings.SplitN(field, "=", 2)
 			if len(parts) == 2 {
-				exitOnErr(c.AddField(parts[0], parts[1], 0))
+				if err := c.AddField(parts[0], parts[1], 0); err != nil {
+					return err
+				}
 			}
 		}
 	}
-
-	err = v.CreateCipher(c)
-	exitOnErr(err)
+	if err := v.CreateCipher(c); err != nil {
+		return err
+	}
 	printOutput(MessageResult{Message: fmt.Sprintf("Created cipher: %s", c.ID()), ID: c.ID()})
+	return nil
 }
 
-func actionUpdate(v *vault.Vault, cmd *cli.Command) {
+func runCipherUpdate(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	v := appCtx.Client
 	id := cmd.String("id")
 	c, err := v.GetCipher(id)
-	exitOnErr(err)
-
+	if err != nil {
+		return err
+	}
 	if cmd.IsSet("name") {
-		exitOnErr(c.SetName(cmd.String("name")))
+		if err := c.SetName(cmd.String("name")); err != nil {
+			return err
+		}
 	}
-
 	if cmd.IsSet("notes") {
-		exitOnErr(c.SetNotes(cmd.String("notes")))
+		if err := c.SetNotes(cmd.String("notes")); err != nil {
+			return err
+		}
 	}
-
 	if cmd.IsSet("login-username") {
-		exitOnErr(c.SetLoginUsername(cmd.String("login-username")))
+		if err := c.SetLoginUsername(cmd.String("login-username")); err != nil {
+			return err
+		}
 	}
 	if cmd.IsSet("login-password") {
-		exitOnErr(c.SetLoginPassword(cmd.String("login-password")))
+		if err := c.SetLoginPassword(cmd.String("login-password")); err != nil {
+			return err
+		}
 	}
 	if cmd.IsSet("url") {
-		exitOnErr(c.SetLoginURLs(cmd.StringSlice("url")))
+		if err := c.SetLoginURLs(cmd.StringSlice("url")); err != nil {
+			return err
+		}
 	}
-
 	if cmd.IsSet("field") {
 		for _, field := range cmd.StringSlice("field") {
 			parts := strings.SplitN(field, "=", 2)
 			if len(parts) == 2 {
-				exitOnErr(c.AddField(parts[0], parts[1], 0))
+				if err := c.AddField(parts[0], parts[1], 0); err != nil {
+					return err
+				}
 			}
 		}
 	}
-
-	err = v.UpdateCipher(c)
-	exitOnErr(err)
+	if err := v.UpdateCipher(c); err != nil {
+		return err
+	}
 	printOutput(MessageResult{Message: fmt.Sprintf("Updated cipher: %s", c.ID()), ID: c.ID()})
+	return nil
 }
 
-func actionDelete(v *vault.Vault, id string) {
-	err := v.DeleteCipher(id)
-	exitOnErr(err)
+func runCipherDelete(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	id := cmd.Args().First()
+	if id == "" {
+		return fmt.Errorf("cipher ID is required")
+	}
+	if err := appCtx.Client.DeleteCipher(id); err != nil {
+		return err
+	}
 	printOutput(MessageResult{Message: fmt.Sprintf("Deleted cipher: %s", id), ID: id})
+	return nil
 }

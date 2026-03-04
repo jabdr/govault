@@ -58,58 +58,13 @@ func main() {
 				Usage:   "Output format: text, json, yaml",
 				Value:   "text",
 			},
+			&cli.StringFlag{
+				Name:    "cache-file",
+				Usage:   "Path to a cache file for session persistence",
+				Sources: cli.EnvVars("GOVAULT_CACHE"),
+			},
 		},
-		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
-			outputFormat = cmd.String("output")
-			verbose := cmd.Bool("verbose")
-
-			var logHandler slog.Handler
-			if verbose {
-				logHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
-			} else {
-				logHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})
-			}
-			logger := slog.New(logHandler)
-			slog.SetDefault(logger)
-
-			server := cmd.String("server")
-			email := cmd.String("email")
-			password := cmd.String("password")
-			clientID := cmd.String("client-id")
-			clientSecret := cmd.String("client-secret")
-			insecureSkipVerify := cmd.Bool("insecure-skip-verify")
-
-			appCtx := &AppContext{
-				Password: password,
-				Server:   server,
-				Insecure: insecureSkipVerify,
-				Logger:   logger,
-			}
-
-			cmdName := cmd.Args().First()
-			if cmdName == "register" || cmdName == "public" || cmdName == "admin" {
-				return SetAppCtx(ctx, appCtx), nil
-			}
-
-			var v *vault.Vault
-			var err error
-
-			if clientID != "" && clientSecret != "" {
-				v, err = vault.LoginAPIKey(server, clientID, clientSecret, email, password, insecureSkipVerify, logger)
-			} else if email != "" && password != "" {
-				v, err = vault.Login(server, email, password, insecureSkipVerify, logger)
-			} else {
-				err = fmt.Errorf("missing credentials")
-			}
-
-			if err != nil {
-				return ctx, err
-			}
-
-			appCtx.Client = v
-
-			return SetAppCtx(ctx, appCtx), nil
-		},
+		Before: runBefore,
 		Commands: []*cli.Command{
 			cipherCmd(),
 			accountCmd(),
@@ -122,6 +77,7 @@ func main() {
 			registerCmd(),
 			adminCmd(),
 			publicCmd(),
+			cacheCmd(),
 		},
 	}
 
@@ -151,6 +107,62 @@ func main() {
 		printError(err)
 		os.Exit(1)
 	}
+}
+
+// runBefore is the global Before hook that sets up logging, parses flags,
+// and initialises the vault client. It stores everything in AppContext.
+func runBefore(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+	outputFormat = cmd.String("output")
+	verbose := cmd.Bool("verbose")
+
+	var logHandler slog.Handler
+	if verbose {
+		logHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
+	} else {
+		logHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})
+	}
+	logger := slog.New(logHandler)
+	slog.SetDefault(logger)
+
+	server := cmd.String("server")
+	email := cmd.String("email")
+	password := cmd.String("password")
+	clientID := cmd.String("client-id")
+	clientSecret := cmd.String("client-secret")
+	insecureSkipVerify := cmd.Bool("insecure-skip-verify")
+
+	appCtx := &AppContext{
+		Email:    email,
+		Password: password,
+		Server:   server,
+		Insecure: insecureSkipVerify,
+		Logger:   logger,
+	}
+
+	// Commands that don't need a logged-in vault client.
+	cmdName := cmd.Args().First()
+	if cmdName == "register" || cmdName == "public" || cmdName == "admin" || cmdName == "cache" {
+		return SetAppCtx(ctx, appCtx), nil
+	}
+
+	var v *vault.Vault
+	var err error
+
+	if clientID != "" && clientSecret != "" {
+		v, err = vault.LoginAPIKey(server, clientID, clientSecret, email, password, insecureSkipVerify, logger)
+	} else if email != "" && password != "" {
+		v, err = vault.Login(server, email, password, insecureSkipVerify, logger)
+	} else {
+		err = fmt.Errorf("missing credentials")
+	}
+
+	if err != nil {
+		return ctx, err
+	}
+
+	appCtx.Client = v
+
+	return SetAppCtx(ctx, appCtx), nil
 }
 
 // exitOnErr prints the error and exits.
