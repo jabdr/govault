@@ -10,10 +10,10 @@ import (
 
 // Collection represents a decrypted organization collection.
 type Collection struct {
-	ID             string
-	OrganizationID string
-	Name           string
-	ExternalID     string
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+	Name           string `json:"name"`
+	ExternalID     string `json:"externalId"`
 }
 
 // ListCollections returns all collections for an organization with decrypted names.
@@ -57,25 +57,13 @@ func (v *Vault) ListSyncCollections(orgID string) ([]Collection, error) {
 	for _, raw := range v.syncData.Collections {
 		// Match by organization ID (case-insensitive)
 		colOrgID, _ := raw["organizationId"].(string)
-		if colOrgID == "" {
-			colOrgID, _ = raw["OrganizationId"].(string)
-		}
 		if !strings.EqualFold(colOrgID, orgID) {
 			continue
 		}
 
 		colID, _ := raw["id"].(string)
-		if colID == "" {
-			colID, _ = raw["Id"].(string)
-		}
 		encName, _ := raw["name"].(string)
-		if encName == "" {
-			encName, _ = raw["Name"].(string)
-		}
 		extID, _ := raw["externalId"].(string)
-		if extID == "" {
-			extID, _ = raw["ExternalId"].(string)
-		}
 
 		name := decryptString(encName, orgKey)
 		collections = append(collections, Collection{

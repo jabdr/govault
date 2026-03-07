@@ -1,3 +1,4 @@
 /tests/ssl/*
 .vscode
 /govault
+.local
