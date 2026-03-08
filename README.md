@@ -52,7 +52,7 @@ govault -o json cipher list
 
 - **Cipher Actions:** `govault cipher [list|get|create|update|delete]`
 - **Account Management:** `govault account [change-password|change-name|change-email|get-api-key]`
-- **Organizations:** `govault org [list|create|members|invite|confirm|get-api-key|edit-member]`
+- **Organizations:** `govault org [list|create|invite|confirm|get-api-key]` and `govault org member [list|edit|remove]`
 - **Collections:** `govault collection [list|create|delete]`
 - **Groups:** `govault group [list|create|update|delete|members|add-member|remove-member]`
 - **Sends:** `govault send [list|create|get|delete]`

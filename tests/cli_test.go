@@ -528,7 +528,7 @@ func TestCLIOrgLifecycle(t *testing.T) {
 
 	// 3. List org members
 	t.Log("Step: org members")
-	out = runCLI(t, email, password, "org", "members", "--id", orgID)
+	out = runCLI(t, email, password, "org", "member", "list", "--id", orgID)
 	var members cliOrgMemberList
 	require.NoError(t, json.Unmarshal(out, &members), "parse members: %s", string(out))
 	require.NotEmpty(t, members.Items, "should have at least the owner")
@@ -548,7 +548,7 @@ func TestCLIOrgLifecycle(t *testing.T) {
 	assert.NotEmpty(t, apiKey.ClientSecret)
 }
 
-func TestCLIOrgMemberRoles(t *testing.T) {
+func TestCLIOrgMemberManagement(t *testing.T) {
 	t.Parallel()
 	ownerEmail, ownerPass := setupCLIUser(t)
 	memberEmail, memberPass := setupCLIUser(t)
@@ -567,7 +567,7 @@ func TestCLIOrgMemberRoles(t *testing.T) {
 	runCLI(t, ownerEmail, ownerPass, "org", "invite", "--id", orgID, "--email", memberEmail, "--type", "admin")
 
 	// Find the member's org user ID
-	out = runCLI(t, ownerEmail, ownerPass, "org", "members", "--id", orgID)
+	out = runCLI(t, ownerEmail, ownerPass, "org", "member", "list", "--id", orgID)
 	var memberList cliOrgMemberList
 	require.NoError(t, json.Unmarshal(out, &memberList))
 	var memberID string
@@ -594,9 +594,9 @@ func TestCLIOrgMemberRoles(t *testing.T) {
 
 	// Edit member role to manager using member ID
 	t.Log("Step: edit member to manager")
-	runCLI(t, ownerEmail, ownerPass, "org", "edit-member", "--id", orgID, "--member-id", memberID, "--type", "manager")
+	runCLI(t, ownerEmail, ownerPass, "org", "member", "edit", "--id", orgID, "--member-id", memberID, "--type", "manager")
 
-	out = runCLI(t, ownerEmail, ownerPass, "org", "members", "--id", orgID)
+	out = runCLI(t, ownerEmail, ownerPass, "org", "member", "list", "--id", orgID)
 	require.NoError(t, json.Unmarshal(out, &memberList))
 	for _, m := range memberList.Items {
 		if m.Email == memberEmail {
@@ -607,15 +607,26 @@ func TestCLIOrgMemberRoles(t *testing.T) {
 
 	// Edit member role to user using email
 	t.Log("Step: edit member to user via email")
-	runCLI(t, ownerEmail, ownerPass, "org", "edit-member", "--id", orgID, "--member-id", memberEmail, "--type", "user")
+	runCLI(t, ownerEmail, ownerPass, "org", "member", "edit", "--id", orgID, "--member-id", memberEmail, "--type", "user")
 
-	out = runCLI(t, ownerEmail, ownerPass, "org", "members", "--id", orgID)
+	out = runCLI(t, ownerEmail, ownerPass, "org", "member", "list", "--id", orgID)
 	require.NoError(t, json.Unmarshal(out, &memberList))
 	for _, m := range memberList.Items {
 		if m.Email == memberEmail {
 			assert.Equal(t, "User", m.Role, "role should be updated to User")
 			break
 		}
+	}
+
+	// Remove member
+	t.Log("Step: remove member")
+	runCLI(t, ownerEmail, ownerPass, "org", "member", "remove", "--id", orgID, "--member-id", memberEmail)
+
+	// Verify member is removed
+	out = runCLI(t, ownerEmail, ownerPass, "org", "member", "list", "--id", orgID)
+	require.NoError(t, json.Unmarshal(out, &memberList))
+	for _, m := range memberList.Items {
+		assert.NotEqual(t, memberEmail, m.Email, "member should be removed from org")
 	}
 }
 
@@ -749,7 +760,7 @@ func TestCLIGroupMemberManagement(t *testing.T) {
 	runCLI(t, ownerEmail, ownerPass, "org", "invite", "--id", orgID, "--email", memberEmail)
 
 	// Find the member's org user ID
-	out = runCLI(t, ownerEmail, ownerPass, "org", "members", "--id", orgID)
+	out = runCLI(t, ownerEmail, ownerPass, "org", "member", "list", "--id", orgID)
 	var memberList cliOrgMemberList
 	require.NoError(t, json.Unmarshal(out, &memberList))
 	var memberID string
@@ -1063,7 +1074,7 @@ func TestCLIPublicImport(t *testing.T) {
 	assert.Contains(t, string(out2), "Imported")
 
 	// Verify member appears in org
-	out = runCLI(t, email, password, "org", "members", "--id", orgID)
+	out = runCLI(t, email, password, "org", "member", "list", "--id", orgID)
 	var members cliOrgMemberList
 	require.NoError(t, json.Unmarshal(out, &members))
 	found := false

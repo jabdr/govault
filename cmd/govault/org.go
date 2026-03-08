@@ -26,14 +26,6 @@ func orgCmd() *cli.Command {
 				Action: runOrgCreate,
 			},
 			{
-				Name:  "members",
-				Usage: "List organization members",
-				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "id", Required: true, Usage: "Organization ID"},
-				},
-				Action: runOrgMembers,
-			},
-			{
 				Name:  "invite",
 				Usage: "Invite an email to an organization",
 				Flags: []cli.Flag{
@@ -61,14 +53,37 @@ func orgCmd() *cli.Command {
 				Action: runOrgGetAPIKey,
 			},
 			{
-				Name:  "edit-member",
-				Usage: "Edit an organization member's role",
-				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "id", Required: true, Usage: "Organization ID"},
-					&cli.StringFlag{Name: "member-id", Required: true, Usage: "Member ID or email"},
-					&cli.StringFlag{Name: "type", Required: true, Usage: "Member role: owner, admin, user, manager"},
+				Name:  "member",
+				Usage: "Manage organization members",
+				Commands: []*cli.Command{
+					{
+						Name:  "list",
+						Usage: "List organization members",
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "id", Required: true, Usage: "Organization ID"},
+						},
+						Action: runOrgMembers,
+					},
+					{
+						Name:  "edit",
+						Usage: "Edit an organization member's role",
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "id", Required: true, Usage: "Organization ID"},
+							&cli.StringFlag{Name: "member-id", Required: true, Usage: "Member ID or email"},
+							&cli.StringFlag{Name: "type", Required: true, Usage: "Member role: owner, admin, user, manager"},
+						},
+						Action: runOrgEditMember,
+					},
+					{
+						Name:  "remove",
+						Usage: "Remove a member from an organization",
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "id", Required: true, Usage: "Organization ID"},
+							&cli.StringFlag{Name: "member-id", Required: true, Usage: "Member ID or email"},
+						},
+						Action: runOrgRemoveMember,
+					},
 				},
-				Action: runOrgEditMember,
 			},
 		},
 	}
@@ -211,6 +226,44 @@ func runOrgEditMember(ctx context.Context, cmd *cli.Command) error {
 	}
 	printOutput(MessageResult{
 		Message: fmt.Sprintf("Updated member %s to role %s in org %s", memberID, vault.MemberTypeName(memberType), orgID),
+		ID:      memberID,
+	})
+	return nil
+}
+
+func runOrgRemoveMember(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	orgID := cmd.String("id")
+	memberIDOrEmail := cmd.String("member-id")
+
+	// Resolve email to member ID if needed
+	memberID := memberIDOrEmail
+	if strings.Contains(memberIDOrEmail, "@") {
+		members, err := appCtx.Client.ListOrgMembers(orgID)
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, m := range members {
+			if m.Email == memberIDOrEmail {
+				memberID = m.ID
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("member with email %q not found in organization", memberIDOrEmail)
+		}
+	}
+
+	if err := appCtx.Client.RemoveMember(orgID, memberID); err != nil {
+		return err
+	}
+	printOutput(MessageResult{
+		Message: fmt.Sprintf("Removed member %s from org %s", memberID, orgID),
 		ID:      memberID,
 	})
 	return nil
