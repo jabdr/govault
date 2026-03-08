@@ -599,7 +599,6 @@ func TestCLICollectionLifecycle(t *testing.T) {
 
 func TestCLIGroupLifecycle(t *testing.T) {
 	t.Parallel()
-	t.Skip("Vaultwarden returns 422 for group create API — skipping until server-side support is verified")
 	email, password := setupCLIUser(t)
 
 	// Setup: create an org

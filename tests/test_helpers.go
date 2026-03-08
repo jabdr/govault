@@ -102,6 +102,7 @@ func SetupTestServer() (string, func()) {
 			"LOGIN_RATELIMIT_SECONDS":        "1",
 			"ADMIN_RATELIMIT_MAX_BURST":      "1000",
 			"ADMIN_RATELIMIT_SECONDS":        "1",
+			"ORG_GROUPS_ENABLED":             "true",
 		},
 		Files: []testcontainers.ContainerFile{
 			{
