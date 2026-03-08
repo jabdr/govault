@@ -20,6 +20,7 @@ type GroupRequest struct {
 	AccessAll   bool                  `json:"accessAll"`
 	ExternalID  string                `json:"externalId,omitempty"`
 	Collections []CollectionSelection `json:"collections"`
+	Users       []string              `json:"users"`
 }
 
 // ListGroups returns all groups for an organization.
@@ -67,6 +68,40 @@ func (c *Client) DeleteGroup(orgID, groupID string) error {
 	err := c.doRequest(http.MethodDelete, path, nil, nil)
 	if err != nil {
 		return fmt.Errorf("api: delete group: %w", err)
+	}
+	return nil
+}
+
+// ListGroupMembers returns the membership IDs of users in a group.
+func (c *Client) ListGroupMembers(orgID, groupID string) ([]string, error) {
+	c.logger.Info("listing group members", "orgID", orgID, "groupID", groupID)
+	var memberIDs []string
+	path := fmt.Sprintf("/api/organizations/%s/groups/%s/users", orgID, groupID)
+	err := c.doRequest(http.MethodGet, path, nil, &memberIDs)
+	if err != nil {
+		return nil, fmt.Errorf("api: list group members: %w", err)
+	}
+	return memberIDs, nil
+}
+
+// SetGroupMembers replaces the full set of members in a group.
+func (c *Client) SetGroupMembers(orgID, groupID string, memberIDs []string) error {
+	c.logger.Info("setting group members", "orgID", orgID, "groupID", groupID, "count", len(memberIDs))
+	path := fmt.Sprintf("/api/organizations/%s/groups/%s/users", orgID, groupID)
+	err := c.doRequest(http.MethodPut, path, memberIDs, nil)
+	if err != nil {
+		return fmt.Errorf("api: set group members: %w", err)
+	}
+	return nil
+}
+
+// RemoveGroupMember removes a single member from a group.
+func (c *Client) RemoveGroupMember(orgID, groupID, memberID string) error {
+	c.logger.Info("removing group member", "orgID", orgID, "groupID", groupID, "memberID", memberID)
+	path := fmt.Sprintf("/api/organizations/%s/groups/%s/delete-user/%s", orgID, groupID, memberID)
+	err := c.doRequest(http.MethodPost, path, nil, nil)
+	if err != nil {
+		return fmt.Errorf("api: remove group member: %w", err)
 	}
 	return nil
 }

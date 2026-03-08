@@ -54,7 +54,7 @@ govault -o json cipher list
 - **Account Management:** `govault account [change-password|change-name|change-email|get-api-key]`
 - **Organizations:** `govault org [list|create|members|invite|confirm|get-api-key]`
 - **Collections:** `govault collection [list|create|delete]`
-- **Groups:** `govault group [list|create|delete]`
+- **Groups:** `govault group [list|create|update|delete|members|add-member|remove-member]`
 - **Sends:** `govault send [list|create|get|delete]`
 - **Emergency Access:** `govault emergency [list-trusted|list-granted|invite|confirm|initiate|approve|reject|view|takeover]`
 - **Admin (Vaultwarden):** `govault admin user [list|get|invite|reinvite|disable|enable|deauth|remove-2fa|delete]` and `govault admin org [list|delete]`

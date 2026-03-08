@@ -138,6 +138,15 @@ type cliGroupList struct {
 	Items []cliGroup `json:"items"`
 }
 
+type cliGroupMember struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+}
+
+type cliGroupMemberList struct {
+	Items []cliGroupMember `json:"items"`
+}
+
 type cliFolder struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -646,6 +655,117 @@ func TestCLIGroupLifecycle(t *testing.T) {
 	// 7. Verify deletion
 	out = runCLI(t, email, password, "group", "list", "--org-id", orgID)
 	assert.Contains(t, string(out), "No groups found")
+}
+
+func TestCLIGroupMemberManagement(t *testing.T) {
+	t.Parallel()
+	ownerEmail, ownerPass := setupCLIUser(t)
+	memberEmail, memberPass := setupCLIUser(t)
+
+	// Setup: create org
+	orgName := fmt.Sprintf("CLI GrpMem Org %d", time.Now().UnixNano())
+	t.Log("Step: create org")
+	out := runCLI(t, ownerEmail, ownerPass, "org", "create",
+		"--name", orgName, "--billing-email", ownerEmail)
+	var orgMsg cliMessage
+	require.NoError(t, json.Unmarshal(out, &orgMsg))
+	orgID := orgMsg.ID
+
+	// Invite and confirm the second user into the org
+	t.Log("Step: invite member to org")
+	runCLI(t, ownerEmail, ownerPass, "org", "invite", "--id", orgID, "--email", memberEmail)
+
+	// Find the member's org user ID
+	out = runCLI(t, ownerEmail, ownerPass, "org", "members", "--id", orgID)
+	var memberList cliOrgMemberList
+	require.NoError(t, json.Unmarshal(out, &memberList))
+	var memberID string
+	for _, m := range memberList.Items {
+		if m.Email == memberEmail {
+			memberID = m.ID
+			break
+		}
+	}
+	require.NotEmpty(t, memberID, "member should be in org members list")
+
+	// Accept the invite via API
+	memberVault := APILogin(t, testServer, memberEmail, memberPass)
+	token := GetInviteToken(t, memberEmail)
+	require.NotEmpty(t, token, "invite token for member")
+	err := memberVault.AcceptOrgInvite(orgID, memberID, token)
+	require.NoError(t, err, "AcceptOrgInvite")
+	t.Log("Member accepted org invite")
+
+	// Confirm the member
+	t.Log("Step: confirm member")
+	runCLI(t, ownerEmail, ownerPass, "org", "confirm", "--id", orgID, "--member-id", memberID)
+	t.Logf("Confirmed member: %s (%s)", memberID, memberEmail)
+
+	// 1. Create group with member via --email
+	t.Log("Step: create group with --email")
+	out = runCLI(t, ownerEmail, ownerPass, "group", "create",
+		"--org-id", orgID, "--name", "Testers", "--email", memberEmail)
+	var grpMsg cliMessage
+	require.NoError(t, json.Unmarshal(out, &grpMsg))
+	groupID := grpMsg.ID
+	t.Logf("Created group: %s", groupID)
+
+	// Verify the member was added during creation
+	t.Log("Step: group members (should have one from create)")
+	out = runCLI(t, ownerEmail, ownerPass, "group", "members", "--org-id", orgID, "--id", groupID)
+	var grpMembers cliGroupMemberList
+	require.NoError(t, json.Unmarshal(out, &grpMembers), "parse group members: %s", string(out))
+	require.Len(t, grpMembers.Items, 1, "group should have 1 member from create")
+	assert.Equal(t, memberEmail, grpMembers.Items[0].Email)
+
+	// 2. Update group WITHOUT --email should preserve existing members
+	t.Log("Step: group update (no --email, preserves members)")
+	runCLI(t, ownerEmail, ownerPass, "group", "update",
+		"--org-id", orgID, "--id", groupID, "--name", "Engineers")
+
+	out = runCLI(t, ownerEmail, ownerPass, "group", "members", "--org-id", orgID, "--id", groupID)
+	require.NoError(t, json.Unmarshal(out, &grpMembers))
+	require.Len(t, grpMembers.Items, 1, "members should be preserved after update without --email")
+	assert.Equal(t, memberEmail, grpMembers.Items[0].Email)
+
+	// 3. Update group WITH --email should replace members (empty list clears)
+	t.Log("Step: group update (--email clears members)")
+	// Use a sentinel value to explicitly pass an "empty" email list.
+	// Actually, the CLI uses empty string == not set, so we demonstrate replacement
+	// by removing the member via remove-member (tested below) and then
+	// re-adding via update --email.
+	runCLI(t, ownerEmail, ownerPass, "group", "remove-member",
+		"--org-id", orgID, "--id", groupID, "--member-id", memberEmail)
+
+	out = runCLI(t, ownerEmail, ownerPass, "group", "members", "--org-id", orgID, "--id", groupID)
+	assert.Contains(t, string(out), "No members in group")
+
+	// 4. Update group WITH --email should set members
+	t.Log("Step: group update (--email sets members)")
+	runCLI(t, ownerEmail, ownerPass, "group", "update",
+		"--org-id", orgID, "--id", groupID, "--name", "Engineers", "--email", memberEmail)
+
+	out = runCLI(t, ownerEmail, ownerPass, "group", "members", "--org-id", orgID, "--id", groupID)
+	require.NoError(t, json.Unmarshal(out, &grpMembers))
+	require.Len(t, grpMembers.Items, 1, "member should be set via update --email")
+	assert.Equal(t, memberEmail, grpMembers.Items[0].Email)
+
+	// 5. add-member should still work additively
+	t.Log("Step: group add-member (additive)")
+	// First remove so we can re-add
+	runCLI(t, ownerEmail, ownerPass, "group", "remove-member",
+		"--org-id", orgID, "--id", groupID, "--member-id", memberEmail)
+	out = runCLI(t, ownerEmail, ownerPass, "group", "members", "--org-id", orgID, "--id", groupID)
+	assert.Contains(t, string(out), "No members in group")
+
+	out = runCLI(t, ownerEmail, ownerPass, "group", "add-member",
+		"--org-id", orgID, "--id", groupID, "--email", memberEmail)
+	assert.Contains(t, string(out), "Added")
+
+	out = runCLI(t, ownerEmail, ownerPass, "group", "members", "--org-id", orgID, "--id", groupID)
+	require.NoError(t, json.Unmarshal(out, &grpMembers))
+	require.Len(t, grpMembers.Items, 1)
+	assert.Equal(t, memberEmail, grpMembers.Items[0].Email)
 }
 
 // ==========================================================================

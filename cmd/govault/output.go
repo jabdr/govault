@@ -235,6 +235,20 @@ func (g GroupResult) TableRow() string {
 	return fmt.Sprintf("%s\t%s\t%t", g.ID, g.Name, g.AccessAll)
 }
 
+// GroupMemberResult holds a group member for output.
+type GroupMemberResult struct {
+	ID    string `json:"id" yaml:"id"`
+	Email string `json:"email" yaml:"email"`
+}
+
+func (m GroupMemberResult) TableHeader() string {
+	return "ID\tEMAIL"
+}
+
+func (m GroupMemberResult) TableRow() string {
+	return fmt.Sprintf("%s\t%s", m.ID, m.Email)
+}
+
 // FolderResult holds a folder for output.
 type FolderResult struct {
 	ID   string `json:"id" yaml:"id"`
