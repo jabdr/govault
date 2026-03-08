@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -17,6 +18,9 @@ type Collection struct {
 }
 
 // ListCollections returns all collections for an organization with decrypted names.
+// It attempts to use the dedicated Collections API to ensure admins/owners see all
+// collections. If the user lacks permissions (returns an HTTP 4xx error), it falls
+// back to parsing collections they have explicit access to from the sync data payload.
 func (v *Vault) ListCollections(orgID string) ([]Collection, error) {
 	orgKey, err := v.GetOrgKey(orgID)
 	if err != nil {
@@ -25,7 +29,17 @@ func (v *Vault) ListCollections(orgID string) ([]Collection, error) {
 
 	apiCols, err := v.client.ListCollections(orgID)
 	if err != nil {
-		return nil, fmt.Errorf("vault: list collections: %w", err)
+		var apiErr *api.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode >= 400 && apiErr.StatusCode < 500 {
+			v.logger.Debug("api permissions error listing collections, falling back to sync data", "status", apiErr.StatusCode)
+			if v.syncData == nil {
+				if err = v.Sync(); err != nil {
+					return nil, fmt.Errorf("vault: list collections sync: %w", err)
+				}
+			}
+			return v.ListSyncCollections(orgID)
+		}
+		return nil, fmt.Errorf("vault: list collections api: %w", err)
 	}
 
 	collections := make([]Collection, 0, len(apiCols))
