@@ -3,6 +3,7 @@ package vault
 import (
 	"encoding/base64"
 	"fmt"
+	"strings"
 
 	"github.com/jabdr/govault/pkg/api"
 	"github.com/jabdr/govault/pkg/crypto"
@@ -143,6 +144,62 @@ func (v *Vault) ListOrgMembers(orgID string) ([]api.OrgMember, error) {
 // RemoveMember removes a member from an organization.
 func (v *Vault) RemoveMember(orgID, memberID string) error {
 	return v.client.RemoveOrgMember(orgID, memberID)
+}
+
+// Member role type constants matching the Bitwarden API.
+const (
+	MemberTypeOwner   = 0
+	MemberTypeAdmin   = 1
+	MemberTypeUser    = 2
+	MemberTypeManager = 3
+	MemberTypeCustom  = 4
+)
+
+// ParseMemberType converts a role name to its integer constant.
+// Accepted names: owner, admin, user, manager, custom.
+func ParseMemberType(name string) (int, error) {
+	switch strings.ToLower(name) {
+	case "owner":
+		return MemberTypeOwner, nil
+	case "admin":
+		return MemberTypeAdmin, nil
+	case "user":
+		return MemberTypeUser, nil
+	case "manager":
+		return MemberTypeManager, nil
+	case "custom":
+		return MemberTypeCustom, nil
+	default:
+		return -1, fmt.Errorf("vault: unknown member type %q (use owner, admin, user, manager, or custom)", name)
+	}
+}
+
+// MemberTypeName returns the human-readable name for a member type integer.
+func MemberTypeName(t int) string {
+	switch t {
+	case MemberTypeOwner:
+		return "Owner"
+	case MemberTypeAdmin:
+		return "Admin"
+	case MemberTypeUser:
+		return "User"
+	case MemberTypeManager:
+		return "Manager"
+	case MemberTypeCustom:
+		return "Custom"
+	default:
+		return fmt.Sprintf("Unknown(%d)", t)
+	}
+}
+
+// EditMember updates an organization member's role.
+func (v *Vault) EditMember(orgID, memberID string, memberType int) error {
+	return v.client.EditOrgMember(orgID, memberID, &api.EditMemberRequest{
+		Type:        memberType,
+		Collections: []api.CollectionSelection{},
+		Groups:      []string{},
+		AccessAll:   true,
+	})
 }
 
 // ListOrgCiphers returns all ciphers for an organization, decrypted.

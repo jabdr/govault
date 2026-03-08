@@ -114,6 +114,8 @@ type cliOrgList struct {
 type cliOrgMember struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
+	Type  int    `json:"type"`
+	Role  string `json:"role"`
 }
 
 type cliOrgMemberList struct {
@@ -544,6 +546,77 @@ func TestCLIOrgLifecycle(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out, &apiKey), "parse org api key: %s", string(out))
 	assert.NotEmpty(t, apiKey.ClientID)
 	assert.NotEmpty(t, apiKey.ClientSecret)
+}
+
+func TestCLIOrgMemberRoles(t *testing.T) {
+	t.Parallel()
+	ownerEmail, ownerPass := setupCLIUser(t)
+	memberEmail, memberPass := setupCLIUser(t)
+
+	// Setup: create org
+	orgName := fmt.Sprintf("CLI Roles Org %d", time.Now().UnixNano())
+	t.Log("Step: create org")
+	out := runCLI(t, ownerEmail, ownerPass, "org", "create",
+		"--name", orgName, "--billing-email", ownerEmail)
+	var orgMsg cliMessage
+	require.NoError(t, json.Unmarshal(out, &orgMsg))
+	orgID := orgMsg.ID
+
+	// Invite user as admin
+	t.Log("Step: invite user as admin")
+	runCLI(t, ownerEmail, ownerPass, "org", "invite", "--id", orgID, "--email", memberEmail, "--type", "admin")
+
+	// Find the member's org user ID
+	out = runCLI(t, ownerEmail, ownerPass, "org", "members", "--id", orgID)
+	var memberList cliOrgMemberList
+	require.NoError(t, json.Unmarshal(out, &memberList))
+	var memberID string
+	var initialRole string
+	for _, m := range memberList.Items {
+		if m.Email == memberEmail {
+			memberID = m.ID
+			initialRole = m.Role
+			break
+		}
+	}
+	require.NotEmpty(t, memberID, "member should be in org members list")
+	assert.Equal(t, "Admin", initialRole, "invited role should be Admin")
+
+	// Accept the invite via API
+	memberVault := APILogin(t, testServer, memberEmail, memberPass)
+	token := GetInviteToken(t, memberEmail)
+	require.NotEmpty(t, token, "invite token for member")
+	err := memberVault.AcceptOrgInvite(orgID, memberID, token)
+	require.NoError(t, err, "AcceptOrgInvite")
+
+	// Confirm the member
+	runCLI(t, ownerEmail, ownerPass, "org", "confirm", "--id", orgID, "--member-id", memberID)
+
+	// Edit member role to manager using member ID
+	t.Log("Step: edit member to manager")
+	runCLI(t, ownerEmail, ownerPass, "org", "edit-member", "--id", orgID, "--member-id", memberID, "--type", "manager")
+
+	out = runCLI(t, ownerEmail, ownerPass, "org", "members", "--id", orgID)
+	require.NoError(t, json.Unmarshal(out, &memberList))
+	for _, m := range memberList.Items {
+		if m.Email == memberEmail {
+			assert.True(t, m.Role == "Manager" || m.Role == "Custom", "role should be updated to Manager or Custom (got: %s)", m.Role)
+			break
+		}
+	}
+
+	// Edit member role to user using email
+	t.Log("Step: edit member to user via email")
+	runCLI(t, ownerEmail, ownerPass, "org", "edit-member", "--id", orgID, "--member-id", memberEmail, "--type", "user")
+
+	out = runCLI(t, ownerEmail, ownerPass, "org", "members", "--id", orgID)
+	require.NoError(t, json.Unmarshal(out, &memberList))
+	for _, m := range memberList.Items {
+		if m.Email == memberEmail {
+			assert.Equal(t, "User", m.Role, "role should be updated to User")
+			break
+		}
+	}
 }
 
 // ==========================================================================

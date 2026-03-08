@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jabdr/govault/pkg/vault"
 	"github.com/urfave/cli/v3"
 )
 
@@ -38,6 +39,7 @@ func orgCmd() *cli.Command {
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "id", Required: true, Usage: "Organization ID"},
 					&cli.StringFlag{Name: "email", Required: true, Usage: "Email(s) to invite (comma-separated)"},
+					&cli.StringFlag{Name: "type", Value: "user", Usage: "Member role: owner, admin, user, manager"},
 				},
 				Action: runOrgInvite,
 			},
@@ -57,6 +59,16 @@ func orgCmd() *cli.Command {
 					&cli.StringFlag{Name: "id", Required: true, Usage: "Organization ID"},
 				},
 				Action: runOrgGetAPIKey,
+			},
+			{
+				Name:  "edit-member",
+				Usage: "Edit an organization member's role",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "id", Required: true, Usage: "Organization ID"},
+					&cli.StringFlag{Name: "member-id", Required: true, Usage: "Member ID or email"},
+					&cli.StringFlag{Name: "type", Required: true, Usage: "Member role: owner, admin, user, manager"},
+				},
+				Action: runOrgEditMember,
 			},
 		},
 	}
@@ -103,7 +115,13 @@ func runOrgMembers(ctx context.Context, cmd *cli.Command) error {
 	}
 	results := make([]OrgMemberResult, 0, len(members))
 	for _, m := range members {
-		results = append(results, OrgMemberResult{ID: m.ID, Email: m.Email, Status: m.Status, Type: m.Type})
+		results = append(results, OrgMemberResult{
+			ID:       m.ID,
+			Email:    m.Email,
+			Status:   m.Status,
+			Type:     m.Type,
+			RoleName: vault.MemberTypeName(m.Type),
+		})
 	}
 	printList(results)
 	return nil
@@ -118,10 +136,14 @@ func runOrgInvite(ctx context.Context, cmd *cli.Command) error {
 	for i, e := range emailList {
 		emailList[i] = strings.TrimSpace(e)
 	}
-	if err := appCtx.Client.InviteToOrganization(cmd.String("id"), emailList, 1); err != nil {
+	memberType, err := vault.ParseMemberType(cmd.String("type"))
+	if err != nil {
 		return err
 	}
-	printOutput(MessageResult{Message: fmt.Sprintf("Invited %d users to org %s", len(emailList), cmd.String("id"))})
+	if err := appCtx.Client.InviteToOrganization(cmd.String("id"), emailList, memberType); err != nil {
+		return err
+	}
+	printOutput(MessageResult{Message: fmt.Sprintf("Invited %d user(s) to org %s as %s", len(emailList), cmd.String("id"), vault.MemberTypeName(memberType))})
 	return nil
 }
 
@@ -149,5 +171,47 @@ func runOrgGetAPIKey(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	printOutput(APIKeyResult{ClientID: clientID, ClientSecret: secret})
+	return nil
+}
+
+func runOrgEditMember(ctx context.Context, cmd *cli.Command) error {
+	appCtx, err := GetAppCtx(ctx)
+	if err != nil {
+		return err
+	}
+	orgID := cmd.String("id")
+	memberIDOrEmail := cmd.String("member-id")
+	memberType, err := vault.ParseMemberType(cmd.String("type"))
+	if err != nil {
+		return err
+	}
+
+	// Resolve email to member ID if needed
+	memberID := memberIDOrEmail
+	if strings.Contains(memberIDOrEmail, "@") {
+		members, err := appCtx.Client.ListOrgMembers(orgID)
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, m := range members {
+			if m.Email == memberIDOrEmail {
+				memberID = m.ID
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("member with email %q not found in organization", memberIDOrEmail)
+		}
+	}
+
+	if err := appCtx.Client.EditMember(orgID, memberID, memberType); err != nil {
+		return err
+	}
+	printOutput(MessageResult{
+		Message: fmt.Sprintf("Updated member %s to role %s in org %s", memberID, vault.MemberTypeName(memberType), orgID),
+		ID:      memberID,
+	})
 	return nil
 }

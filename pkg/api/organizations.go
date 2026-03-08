@@ -167,6 +167,25 @@ func (c *Client) ListOrgMembers(orgID string) ([]OrgMember, error) {
 	return resp.Data, nil
 }
 
+// EditMemberRequest is the request body for editing an org member.
+type EditMemberRequest struct {
+	Type        int                   `json:"type"`
+	Collections []CollectionSelection `json:"collections"`
+	Groups      []string              `json:"groups"`
+	AccessAll   bool                  `json:"accessAll"`
+}
+
+// EditOrgMember updates an organization member's role and permissions.
+func (c *Client) EditOrgMember(orgID, memberID string, req *EditMemberRequest) error {
+	c.logger.Info("editing org member", "orgID", orgID, "memberID", memberID, "type", req.Type)
+	path := fmt.Sprintf("/api/organizations/%s/users/%s", orgID, memberID)
+	err := c.doRequest(http.MethodPut, path, req, nil)
+	if err != nil {
+		return fmt.Errorf("api: edit org member: %w", err)
+	}
+	return nil
+}
+
 // RemoveOrgMember removes a member from an organization.
 func (c *Client) RemoveOrgMember(orgID, memberID string) error {
 	c.logger.Info("removing org member", "orgID", orgID, "memberID", memberID)

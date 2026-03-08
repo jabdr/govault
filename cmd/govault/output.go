@@ -192,18 +192,19 @@ func (o OrgResult) TableRow() string {
 
 // OrgMemberResult holds an organization member for output.
 type OrgMemberResult struct {
-	ID     string `json:"id" yaml:"id"`
-	Email  string `json:"email" yaml:"email"`
-	Status int    `json:"status" yaml:"status"`
-	Type   int    `json:"type" yaml:"type"`
+	ID       string `json:"id" yaml:"id"`
+	Email    string `json:"email" yaml:"email"`
+	Status   int    `json:"status" yaml:"status"`
+	Type     int    `json:"type" yaml:"type"`
+	RoleName string `json:"role" yaml:"role"`
 }
 
 func (m OrgMemberResult) TableHeader() string {
-	return "ID\tEMAIL\tSTATUS\tTYPE"
+	return "ID\tEMAIL\tROLE\tSTATUS"
 }
 
 func (m OrgMemberResult) TableRow() string {
-	return fmt.Sprintf("%s\t%s\t%d\t%d", m.ID, m.Email, m.Status, m.Type)
+	return fmt.Sprintf("%s\t%s\t%s\t%d", m.ID, m.Email, m.RoleName, m.Status)
 }
 
 // CollectionResult holds a collection for output.
